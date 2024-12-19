@@ -8,7 +8,12 @@
 /// An object that encodes instances of a data type
 /// as strings following the simple strings file format.
 public struct StringEncoder {
-    
+    private let options: WritingOptions
+
+    public init(options: WritingOptions) {
+        self.options = options
+    }
+
     /// Returns a strings file-encoded representation of the specified value.
     public func encode<T: Encodable>(_ value: T) throws -> [String] {
         let stringEncoding = StringEncoding()

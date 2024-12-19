@@ -114,4 +114,36 @@ public struct WritingOptions {
     }
 
     public init() { tabularOptions = .init() }
+    
+    func encode<T: Encodable>(_ type: T.Type, value: T, rowNumber: Int, encoding: Encoder) throws {
+        if let formatter = formatterForType(type) {
+            try formatter(value).encode(to: encoding)
+        } else {
+            try value.encode(to: encoding)
+        }
+    }
+
+    func encodeIfPresent<T: Encodable>(_ type: T.Type, value: T, rowNumber: Int, encoding: Encoder) throws {
+        if let formatter = formatterForType(type) {
+            try formatter(value).encode(to: encoding)
+        } else {
+            try value.encode(to: encoding)
+        }
+    }
+
+    private func formatterForType<T>(_ type: T.Type) -> ((T) -> String)? {
+        switch type {
+        case is Data.Type:
+            guard let dataFormatter = dataFormatter else { return nil }
+            return { dataFormatter($0 as! Data) }
+        case is Decimal.Type:
+            guard let decimalFormatter = decimalFormatter else { return nil }
+            return { decimalFormatter($0 as! Decimal) }
+        case is URL.Type:
+            guard let urlFormatter = urlFormatter else { return nil }
+            return { urlFormatter($0 as! URL) }
+        default:
+            return nil
+        }
+    }
 }

@@ -9,24 +9,80 @@
 import Foundation
 import TabularData
 
-public protocol CodableRow: Codable {
+public typealias CodableRow = DecodableRow & EncodableRow
+
+public protocol DecodableRow: Decodable {
     associatedtype CodingKeysType: CaseIterable & RawRepresentable where CodingKeysType.RawValue == String
 
     var row: Int { get set }
     func postInit()
 }
 
-public extension CodableRow {
+public extension DecodableRow {
     var row: Int { get { -1 } set { } }
     func postInit() { }
 }
 
-enum FileError: Error {
+public protocol EncodableRow: Encodable {
+    associatedtype CodingKeysType: CaseIterable & RawRepresentable where CodingKeysType.RawValue == String
+}
+
+public enum FileError: Error {
     case open
 }
 
+//public struct StreamingTask: Sendable {
+//    func start() { }
+//    func stop() { }
+//    func cancel() { }
+//}
+
 public struct TabularCSV {
-    public static func importCSV<T: Codable>(
+//    public static func streamIn<T: Codable>(
+//        type: T.Type,
+//        header: [String],
+//        atPath filePath: String,
+//        options: ReadingOptions = .init(),
+//        completionHandler: @escaping @Sendable (T?, Bool, (any Error)?) -> Void) throws -> StreamingTask
+//    {
+//        let columnTypes = try TabularCSV.determineColumnTypes(type: type, header: header, from: filePath, options: options)
+//        let dataFrame = try DataFrame(contentsOfCSVFile: URL(fileURLWithPath: filePath), types: columnTypes, options: options.tabularOptions)
+//        let headerIndexMap: [Int?]? =
+//            options.hasHeaderRow
+//            ? try createHeaderIndexMap(for: T.self, expectedHeader: header, csvHeader: dataFrame.columns.map(\.name))
+//            : nil
+//    }
+    
+//    public static func streamInAsync<T: Codable & Sendable>(
+//        type: T.Type,
+//        header: [String],
+//        atPath filePath: String,
+//        options: ReadingOptions = .init()) -> AsyncThrowingStream<T, any Error>
+//    {
+//        AsyncThrowingStream { continuation in
+//            do {
+//                let task = try streamIn(type: type, header: header, atPath: filePath, options: options) { data, isEOF, error in
+//                    if let error = error {
+//                        continuation.finish(throwing: error)
+//                    }
+//                    if let data = data {
+//                        continuation.yield(data)
+//                    }
+//                    if isEOF {
+//                        continuation.finish()
+//                    }
+//                }
+//                continuation.onTermination = { _ in
+//                    task.stop()
+//                }
+//                task.start()
+//            } catch {
+//                continuation.finish(throwing: error)
+//            }
+//        }
+//    }
+    
+    public static func importCSV<T: Decodable>(
         type: T.Type,
         header: [String],
         atPath filePath: String,
@@ -35,17 +91,15 @@ public struct TabularCSV {
         let columnTypes = try TabularCSV.determineColumnTypes(type: type, header: header, from: filePath, options: options)
         let dataFrame = try DataFrame(contentsOfCSVFile: URL(fileURLWithPath: filePath), types: columnTypes, options: options.tabularOptions)
         
-        let headerIndexMap: [Int?]? =
+        let rowMapping: [Int?]? =
             options.hasHeaderRow
             ? try createHeaderIndexMap(for: T.self, expectedHeader: header, csvHeader: dataFrame.columns.map(\.name))
             : nil
-        let dataFrameDecoder = DataFrameDecoder(options: options)
-        return try dataFrame.rows.enumerated().map { index, row in
-            try dataFrameDecoder.decode(T.self, from: row, rowNumber: index+1, rowMapping: headerIndexMap)
-        }
+
+        return try DataFrameDecoder(options: options).decode(T.self, dataFrame: dataFrame, rowMapping: rowMapping)
     }
     
-    public static func importCSV<T: Codable>(
+    public static func importCSV<T: Decodable>(
         type: T.Type,
         header: [String],
         atPath filePath: String,
@@ -56,7 +110,7 @@ public struct TabularCSV {
         return try importCSV(type: type, header: header, atPath: filePath, options: opts)
     }
 
-    public static func importCSV<T: CodableRow>(
+    public static func importCSV<T: DecodableRow>(
         type: T.Type,
         atPath filePath: String,
         options: ReadingOptions = .init()) throws -> [T]
@@ -69,7 +123,7 @@ public struct TabularCSV {
         return rows
     }
     
-    public static func importCSV<T: CodableRow>(
+    public static func importCSV<T: DecodableRow>(
         type: T.Type,
         atPath filePath: String,
         options: ((inout ReadingOptions) -> Void)) throws -> [T]
@@ -79,27 +133,18 @@ public struct TabularCSV {
         return try importCSV(type: type, atPath: filePath, options: opts)
     }
     
-    public static func exportCSV<T: Codable>(
+    public static func exportCSV<T: Encodable>(
         rows: [T],
         header: [String],
         toPath filePath: String,
         options: WritingOptions = .init()) throws
     {
-        let encoder = StringEncoder()
-        let stringRows = try rows.map { try encoder.encode($0) }
-
-        // Create columns from preprocessed rows
-        var dataFrame = DataFrame()
-        for (index, columnName) in header.enumerated() {
-            let columnData = stringRows.map { $0[index] }
-            dataFrame.append(column: Column(name: columnName, contents: columnData))
-        }
-        
+        let dataFrame = try DataFrameEncoder(options: options).encode(header: header, values: rows)
         let url = URL(fileURLWithPath: filePath)
-        try dataFrame.writeCSV(to: url)
+        try dataFrame.writeCSV(to: url, options: options.tabularOptions)
     }
     
-    public static func exportCSV<T: Codable>(
+    public static func exportCSV<T: Encodable>(
         rows: [T],
         header: [String],
         toPath filePath: String,
@@ -110,7 +155,7 @@ public struct TabularCSV {
         try exportCSV(rows: rows, header: header, toPath: filePath, options: opts)
     }
     
-    public static func exportCSV<T: CodableRow>(
+    public static func exportCSV<T: EncodableRow>(
         rows: [T],
         toPath filePath: String,
         options: WritingOptions = .init()) throws
@@ -119,7 +164,7 @@ public struct TabularCSV {
         try exportCSV(rows: rows, header: header, toPath: filePath, options: options)
     }
  
-    public static func exportCSV<T: CodableRow>(
+    public static func exportCSV<T: EncodableRow>(
         rows: [T],
         toPath filePath: String,
         options: ((inout WritingOptions) -> Void)) throws
@@ -129,7 +174,7 @@ public struct TabularCSV {
         try exportCSV(rows: rows, toPath: filePath, options: opts)
     }
     
-    private static func determineColumnTypes<T: Codable>(
+    private static func determineColumnTypes<T: Decodable>(
         type: T.Type,
         header: [String],
         from filePath: String,
@@ -198,7 +243,7 @@ public struct TabularCSV {
         return (data: string.data(using: .utf8)!, lines: lines)
     }
     
-    static func createHeaderIndexMap<T: Codable>(for type: T.Type, expectedHeader: [String], csvHeader: [String]) throws -> [Int?] {
+    static func createHeaderIndexMap<T: Decodable>(for type: T.Type, expectedHeader: [String], csvHeader: [String]) throws -> [Int?] {
         // Find unexpected headers
         let unexpectedHeaders = csvHeader.filter { !expectedHeader.contains($0) }
         

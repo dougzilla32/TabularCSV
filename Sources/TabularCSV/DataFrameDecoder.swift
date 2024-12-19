@@ -1,5 +1,5 @@
 //
-//  StringDecoder.swift
+//  DataFrameDecoder.swift
 //  SweepMap
 //
 //  Created by Doug on 12/5/24.
@@ -9,69 +9,60 @@
 import Foundation
 import TabularData
 
-typealias TabularRow = DataCollection<DataFrame.Row>
-
-/// An object that decodes strings following the simple strings file format
-/// into instances of a data type.
-public class DataFrameDecoder {
+public struct DataFrameDecoder {
     private let options: ReadingOptions
 
-    public init(options: ReadingOptions) {
-        self.options = options
-    }
+    public init(options: ReadingOptions) { self.options = options }
 
-    /// Decodes a strings file-encoded representation into an instance of the specified type.
     public func decode<T: Decodable>(
         _ type: T.Type,
-        from row: DataFrame.Row,
+        dataFrame: DataFrame,
+        rowMapping: [Int?]? = nil) throws -> [T]
+    {
+        try dataFrame.rows.enumerated().map { index, row in
+            try decode(T.self, row: row, rowNumber: index+1, rowMapping: rowMapping)
+        }
+    }
+    
+    public func decode<T: Decodable>(
+        _ type: T.Type,
+        row: DataFrame.Row,
         rowNumber: Int = -1,
         rowMapping: [Int?]? = nil) throws -> T
     {
         try T(from: DataFrameDecoding(row: row, rowNumber: rowNumber, rowMapping: rowMapping, options: options))
     }
-    
 }
 
-fileprivate struct DataFrameDecoding: Decoder {
-
-    private let data: TabularRow
+struct DataFrameDecoding: DataDecoder {
+    let data: RowCollection<DataFrame.Row>
     var codingPath: [CodingKey] = []
     let userInfo: [CodingUserInfoKey: Any] = [:]
 
     init(row: DataFrame.Row, rowNumber: Int, rowMapping: [Int?]?, options: ReadingOptions) {
-        self.data = DataCollection(row: row, rowNumber: rowNumber, rowMapping: rowMapping, options: options)
+        self.data = RowCollection(row: row, rowNumber: rowNumber, rowMapping: rowMapping, options: options)
     }
     
-    init(data: TabularRow) {
-        self.data = data
-    }
-
     func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedDecodingContainer<Key> {
-        let container = DataFrameKeyedDecoding<Key>(from: data)
-        return KeyedDecodingContainer(container)
+        KeyedDecodingContainer(DataFrameKeyedDecoding<Key>(decoding: self))
     }
+    func unkeyedContainer() -> UnkeyedDecodingContainer { DataFrameUnkeyedDecoding(decoding: self) }
+    func singleValueContainer() -> SingleValueDecodingContainer { DataFrameSingleValueDecoding(decoding: self) }
 
-    func unkeyedContainer() -> UnkeyedDecodingContainer {
-        return DataFrameUnkeyedDecoding(from: data)
-    }
-
-    func singleValueContainer() -> SingleValueDecodingContainer {
-        return DataFrameSingleValueDecoding(from: data)
-    }
+    func nextString(forKey key: CodingKey?) throws -> String { try data.nextString(forKey: key) }
+    func nextStringIfPresent() -> String? { data.nextStringIfPresent() }
 }
 
 fileprivate struct DataFrameKeyedDecoding<Key: CodingKey>: KeyedDecodingContainerProtocol {
-    private let data: TabularRow
+    private let decoding: DataFrameDecoding
     var codingPath: [CodingKey] = []
-    
-    init(from data: TabularRow) { self.data = data }
-
-    var allKeys: [Key] { [] }
-
+    var allKeys: [Key] = []
     func contains(_ key: Key) -> Bool { true }
+
+    init(decoding: DataFrameDecoding) { self.decoding = decoding }
     
     private func nextValue<T: LosslessStringConvertible>(_ type: T.Type, forKey key: Key) throws -> T {
-        try data.nextValue(type, forKey: key)
+        try decoding.data.nextValue(type, forKey: key)
     }
     
     func decodeNil(forKey key: Key) throws -> Bool { try nextValue(String.self, forKey: key) == "nil" }
@@ -90,10 +81,10 @@ fileprivate struct DataFrameKeyedDecoding<Key: CodingKey>: KeyedDecodingContaine
     func decode(_ type: UInt16.Type,  forKey key: Key) throws -> UInt16  { try nextValue(type, forKey: key) }
     func decode(_ type: UInt32.Type,  forKey key: Key) throws -> UInt32  { try nextValue(type, forKey: key) }
     func decode(_ type: UInt64.Type,  forKey key: Key) throws -> UInt64  { try nextValue(type, forKey: key) }
-    func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T { try data.decode(type) }
+    func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T { try decoding.data.decode(type, forKey: key, decoding: decoding) }
 
     private func nextValueIfPresent<T: LosslessStringConvertible>(_ type: T.Type) -> T? {
-        data.nextValueIfPresent(type)
+        decoding.data.nextValueIfPresent(type)
     }
 
     func decodeIfPresent(_ type: Bool.Type,    forKey key: Key) throws -> Bool?    { nextValueIfPresent(type) }
@@ -110,49 +101,38 @@ fileprivate struct DataFrameKeyedDecoding<Key: CodingKey>: KeyedDecodingContaine
     func decodeIfPresent(_ type: UInt16.Type,  forKey key: Key) throws -> UInt16?  { nextValueIfPresent(type) }
     func decodeIfPresent(_ type: UInt32.Type,  forKey key: Key) throws -> UInt32?  { nextValueIfPresent(type) }
     func decodeIfPresent(_ type: UInt64.Type,  forKey key: Key) throws -> UInt64?  { nextValueIfPresent(type) }
-    func decodeIfPresent<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T? { try data.decodeIfPresent(type) }
+    func decodeIfPresent<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T? { try decoding.data.decodeIfPresent(type, decoding: decoding) }
     
     func nestedContainer<NestedKey: CodingKey>(
         keyedBy keyType: NestedKey.Type,
         forKey key: Key) -> KeyedDecodingContainer<NestedKey>
     {
-        KeyedDecodingContainer(DataFrameKeyedDecoding<NestedKey>(from: data))
-    }
-    
-    func nestedUnkeyedContainer(forKey key: Key) -> UnkeyedDecodingContainer {
-        DataFrameUnkeyedDecoding(from: data)
-    }
-
-    func superDecoder() throws -> any Decoder {
-        return try superDecoder(forKey: Key(stringValue: "super")!)
-    }
-    
-    func superDecoder(forKey key: Key) throws -> any Decoder {
-        DataFrameDecoding(data: data)
-    }
+        KeyedDecodingContainer(DataFrameKeyedDecoding<NestedKey>(decoding: decoding))
+    }    
+    func nestedUnkeyedContainer(forKey key: Key) -> UnkeyedDecodingContainer { DataFrameUnkeyedDecoding(decoding: decoding) }
+    func superDecoder() throws -> any Decoder { try superDecoder(forKey: Key(stringValue: "super")!) }
+    func superDecoder(forKey key: Key) throws -> any Decoder { decoding }
 }
 
 fileprivate struct DataFrameUnkeyedDecoding: UnkeyedDecodingContainer {
-    private let data: TabularRow
+    private let decoding: DataFrameDecoding
     var codingPath: [CodingKey] = []
-    var count: Int? { return data.row.count }
-    var isAtEnd: Bool { return currentIndex >= data.row.count }
-    var currentIndex: Int { return data.currentIndex }
+    var count: Int? { return decoding.data.row.count }
+    var isAtEnd: Bool { return currentIndex >= decoding.data.row.count }
+    var currentIndex: Int { return decoding.data.currentIndex }
     
-    init(from data: TabularRow) {
-        self.data = data
-    }
+    init(decoding: DataFrameDecoding) { self.decoding = decoding }
     
     private func checkEnd() throws {
         if isAtEnd {
             throw CSVDecodingError.dataCorrupted(
                 DecodingError.Context(codingPath: [],
-                                      debugDescription: "Unkeyed container is at end\(data.rowNumber.atRow)."))
+                                      debugDescription: "Unkeyed container is at end\(decoding.data.rowNumber.atRow)."))
         }
     }
     
     private func nextValue<T: LosslessStringConvertible>(_ type: T.Type) throws -> T {
-        try data.nextValue(type)
+        try decoding.data.nextValue(type)
     }
     
     mutating func decodeNil() throws -> Bool { try nextValue(String.self) == "nil" }
@@ -171,10 +151,10 @@ fileprivate struct DataFrameUnkeyedDecoding: UnkeyedDecodingContainer {
     mutating func decode(_ type: UInt16.Type  ) throws -> UInt16  { try nextValue(type) }
     mutating func decode(_ type: UInt32.Type  ) throws -> UInt32  { try nextValue(type) }
     mutating func decode(_ type: UInt64.Type  ) throws -> UInt64  { try nextValue(type) }
-    mutating func decode<T: Decodable>(_ type: T.Type) throws -> T { try data.decode(type) }
+    mutating func decode<T: Decodable>(_ type: T.Type) throws -> T { try decoding.data.decode(type, decoding: decoding) }
 
     private func nextValueIfPresent<T: LosslessStringConvertible>(_ type: T.Type) -> T? {
-        data.nextValueIfPresent(type)
+        decoding.data.nextValueIfPresent(type)
     }
 
     mutating func decodeIfPresent(_ type: Bool.Type    ) throws -> Bool?    { nextValueIfPresent(type) }
@@ -191,38 +171,35 @@ fileprivate struct DataFrameUnkeyedDecoding: UnkeyedDecodingContainer {
     mutating func decodeIfPresent(_ type: UInt16.Type  ) throws -> UInt16?  { nextValueIfPresent(type) }
     mutating func decodeIfPresent(_ type: UInt32.Type  ) throws -> UInt32?  { nextValueIfPresent(type) }
     mutating func decodeIfPresent(_ type: UInt64.Type  ) throws -> UInt64?  { nextValueIfPresent(type) }
-    mutating func decodeIfPresent<T: Decodable>(_ type: T.Type) throws -> T? { try data.decodeIfPresent(type) }
+    mutating func decodeIfPresent<T: Decodable>(_ type: T.Type) throws -> T? { try decoding.data.decodeIfPresent(type, decoding: decoding) }
     
     mutating func nestedContainer<NestedKey: CodingKey>(keyedBy keyType: NestedKey.Type) throws -> KeyedDecodingContainer<NestedKey> {
         try checkEnd()
-        return KeyedDecodingContainer(DataFrameKeyedDecoding<NestedKey>(from: data))
+        return KeyedDecodingContainer(DataFrameKeyedDecoding<NestedKey>(decoding: decoding))
     }
     
     mutating func nestedUnkeyedContainer() throws -> UnkeyedDecodingContainer {
         try checkEnd()
-        return DataFrameUnkeyedDecoding(from: data)
+        return DataFrameUnkeyedDecoding(decoding: decoding)
     }
     
     mutating func superDecoder() throws -> Decoder {
         try checkEnd()
-        return DataFrameDecoding(data: data)
+        return decoding
     }
 }
 
 fileprivate struct DataFrameSingleValueDecoding: SingleValueDecodingContainer {
-    
-    private let data: TabularRow
+    private let decoding: DataFrameDecoding
     var codingPath: [CodingKey] = []
 
-    init(from data: TabularRow) {
-        self.data = data
-    }
+    init(decoding: DataFrameDecoding) { self.decoding = decoding }
     
     private func nextValue<T: LosslessStringConvertible>(_ type: T.Type) throws -> T {
-        try data.nextValue(type)
+        try decoding.data.nextValue(type)
     }
 
-    func decodeNil() -> Bool { data.nextValueIfPresent(String.self) == "nil" }
+    func decodeNil() -> Bool { decoding.data.nextValueIfPresent(String.self) == "nil" }
     
     func decode(_ type: Bool.Type   ) throws -> Bool    { try nextValue(type) }
     func decode(_ type: String.Type ) throws -> String  { try nextValue(type) }
@@ -238,5 +215,5 @@ fileprivate struct DataFrameSingleValueDecoding: SingleValueDecodingContainer {
     func decode(_ type: UInt16.Type ) throws -> UInt16  { try nextValue(type) }
     func decode(_ type: UInt32.Type ) throws -> UInt32  { try nextValue(type) }
     func decode(_ type: UInt64.Type ) throws -> UInt64  { try nextValue(type) }
-    func decode<T: Decodable>(_ type: T.Type) throws -> T { try data.decode(type) }
+    func decode<T: Decodable>(_ type: T.Type) throws -> T { try decoding.data.decode(type, decoding: decoding) }
 }

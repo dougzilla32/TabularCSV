@@ -1,26 +1,35 @@
 //
-//  DataCollection.swift
+//  RowCollection.swift
 //  SweepMap
 //
 //  Created by Doug on 12/16/24.
 //  Copyright © 2024 Doug. All rights reserved.
 //
 
+import Foundation
 import TabularData
 
-protocol TypedCollection: Collection {
+protocol TypedRow: Collection {
     subscript<T>(position: Int, type: T.Type) -> T? { get }
+    
+    var count: Int { get }
 }
 
-extension DataFrame.Row: TypedCollection { }
+extension DataFrame.Row: TypedRow { }
 
-extension Array: TypedCollection where Element == String? {
+extension Array: TypedRow where Element == String? {
     subscript<T>(position: Int, type: T.Type) -> T? {
         self[position] as? T
     }
 }
 
-final class DataCollection<Row: TypedCollection> {
+protocol DataDecoder: Decoder {
+    func nextString(forKey key: CodingKey?) throws -> String
+
+    func nextStringIfPresent() -> String?
+}
+
+final class RowCollection<Row: TypedRow> {
     let row: Row
     let rowNumber: Int
     private let rowMapping: [Int?]?
@@ -69,16 +78,12 @@ final class DataCollection<Row: TypedCollection> {
         return nextValueIfPresent(String.self)
     }
 
-    func decode<T: Decodable>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
-        let string = try nextString(forKey: key)
-        return try options.decode(type, string: string, rowNumber: rowNumber)
+    func decode<T: Decodable>(_ type: T.Type, forKey key: CodingKey? = nil, decoding: DataDecoder) throws -> T {
+        return try options.decode(type, forKey: key, rowNumber: rowNumber, decoding: decoding)
     }
 
-    func decodeIfPresent<T: Decodable>(_ type: T.Type) throws -> T? {
-        guard let string = nextStringIfPresent(), !string.isEmpty else {
-            return nil
-        }
-        return try options.decodeIfPresent(type, string: string, rowNumber: rowNumber)
+    func decodeIfPresent<T: Decodable>(_ type: T.Type, decoding: DataDecoder) throws -> T? {
+        return try options.decodeIfPresent(type, rowNumber: rowNumber, decoding: decoding)
     }
     
     func decode<T: LosslessStringConvertible>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
@@ -102,5 +107,35 @@ final class DataCollection<Row: TypedCollection> {
             return nil
         }
         return T(string)
+    }
+}
+
+final class ColumnCollection {
+    let header: [String]
+    let numRows: Int
+    var columns: [AnyColumn] = []
+    private let options: WritingOptions
+    var columnIndex = 0
+    
+    init(header: [String], numRows: Int, options: WritingOptions) {
+        self.header = header
+        self.numRows = numRows
+        self.options = options
+    }
+    
+    func encode<T>(_ value: T) {
+        if columns.count < columnIndex {
+            columns.append(Column<T>(name: header[columnIndex], capacity: numRows).eraseToAnyColumn())
+        }
+        columns[columnIndex].append(value)
+        columnIndex += 1
+    }
+    
+    func encode<T: Encodable>(_ type: T.Type, value: T, rowNumber: Int, encoding: Encoder) throws {
+        try options.encode(type, value: value, rowNumber: rowNumber, encoding: encoding)
+    }
+
+    func encodeIfPresent<T: Encodable>(_ type: T.Type, value: T, rowNumber: Int, encoding: Encoder) throws {
+        try options.encodeIfPresent(type, value: value, rowNumber: rowNumber, encoding: encoding)
     }
 }

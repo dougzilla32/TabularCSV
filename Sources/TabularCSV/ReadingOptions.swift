@@ -136,25 +136,34 @@ public struct ReadingOptions {
 
     public init() { tabularOptions = .init() }
     
-    func decode<T: Decodable>(_ type: T.Type, string: String, rowNumber: Int) throws -> T {
-        guard let value = try decodeIfPresent(type, string: string, rowNumber: rowNumber) else {
-            throw CSVDecodingError.dataCorrupted(
-                DecodingError.Context(codingPath: [],
-                                      debugDescription: "Cannot decode value\(rowNumber.atRow)."))
+    func decode<T: Decodable>(_ type: T.Type, forKey key: CodingKey?, rowNumber: Int, decoding: DataDecoder) throws -> T {
+        if let parser = parserForType(type) {
+            let string = try decoding.nextString(forKey: key)
+            return parser(string) as! T
+        } else {
+            return try T(from: decoding)
         }
-        return value
     }
-    
-    func decodeIfPresent<T: Decodable>(_ type: T.Type, string: String, rowNumber: Int) throws -> T? {
+
+    func decodeIfPresent<T: Decodable>(_ type: T.Type, rowNumber: Int, decoding: DataDecoder) throws -> T? {
+        if let parser = parserForType(type) {
+            guard let string = decoding.nextStringIfPresent(), !string.isEmpty else { return nil }
+            return parser(string) as? T
+        } else {
+            return try T(from: decoding)
+        }
+    }
+
+    private func parserForType<T>(_ type: T.Type) -> ((String) -> Any)? {
         switch type {
-        case is Data.Type where dataParser != nil:
-            return dataParser!(string) as? T
-        case is Decimal.Type where decimalParser != nil:
-            return decimalParser!(string) as? T
-        case is URL.Type where urlParser != nil:
-            return urlParser!(string) as? T
+        case is Data.Type:
+            return dataParser
+        case is Decimal.Type:
+            return decimalParser
+        case is URL.Type:
+            return urlParser
         default:
-            return try T(from: StringDecoding(strings: [string], rowNumber: rowNumber, options: self))
+            return nil
         }
     }
 }
