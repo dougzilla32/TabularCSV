@@ -10,60 +10,60 @@ import Foundation
 import TabularData
 
 public struct ReadingOptions {
-    public var tabularOptions: CSVReadingOptions
+    public var csvReadingOptions: CSVReadingOptions
     
     /// A Boolean value that indicates whether the CSV file has a header row.
     ///
     /// Defaults to `true`.
     public var hasHeaderRow: Bool {
-        get { tabularOptions.hasHeaderRow }
-        set { tabularOptions.hasHeaderRow = newValue }
+        get { csvReadingOptions.hasHeaderRow }
+        set { csvReadingOptions.hasHeaderRow = newValue }
     }
 
     /// The set of strings that stores acceptable spellings for empty values.
     ///
     /// Defaults to `["", "#N/A", "#N/A N/A", "#NA", "N/A", "NA", "NULL", "n/a", "null"]`.
     public var nilEncodings: Set<String> {
-        get { tabularOptions.nilEncodings }
-        set { tabularOptions.nilEncodings = newValue }
+        get { csvReadingOptions.nilEncodings }
+        set { csvReadingOptions.nilEncodings = newValue }
     }
 
     /// The set of strings that stores acceptable spellings for true Boolean values.
     ///
     /// Defaults to `["1", "True", "TRUE", "true"]`.
     public var trueEncodings: Set<String> {
-        get { tabularOptions.trueEncodings }
-        set { tabularOptions.trueEncodings = newValue }
+        get { csvReadingOptions.trueEncodings }
+        set { csvReadingOptions.trueEncodings = newValue }
     }
 
     /// The set of strings that stores acceptable spellings for false Boolean values.
     ///
     /// Defaults to `["0", "False", "FALSE", "false"]`.
     public var falseEncodings: Set<String> {
-        get { tabularOptions.falseEncodings }
-        set { tabularOptions.falseEncodings = newValue }
+        get { csvReadingOptions.falseEncodings }
+        set { csvReadingOptions.falseEncodings = newValue }
     }
 
     /// The type to use for floating-point numeric values.
     ///
     /// Defaults to ``CSVType/double``.
     public var floatingPointType: CSVType {
-        get { tabularOptions.floatingPointType }
-        set { tabularOptions.floatingPointType = newValue }
+        get { csvReadingOptions.floatingPointType }
+        set { csvReadingOptions.floatingPointType = newValue }
     }
 
     /// An array of closures that parse a date from a string.
     public var dateParsers: [(String) -> Date?] {
-        get { tabularOptions.dateParsers }
-        set { tabularOptions.dateParsers = newValue }
+        get { csvReadingOptions.dateParsers }
+        set { csvReadingOptions.dateParsers = newValue }
     }
 
     /// A Boolean value that indicates whether to ignore empty lines.
     ///
     /// Defaults to `true`.
     public var ignoresEmptyLines: Bool {
-        get { tabularOptions.ignoresEmptyLines }
-        set { tabularOptions.ignoresEmptyLines = newValue }
+        get { csvReadingOptions.ignoresEmptyLines }
+        set { csvReadingOptions.ignoresEmptyLines = newValue }
     }
 
     /// A Boolean value that indicates whether to enable quoting.
@@ -71,8 +71,8 @@ public struct ReadingOptions {
     /// When `true`, the contents of a quoted field can contain special characters, such as the field
     /// delimiter and newlines. Defaults to `true`.
     public var usesQuoting: Bool {
-        get { tabularOptions.usesQuoting }
-        set { tabularOptions.usesQuoting = newValue }
+        get { csvReadingOptions.usesQuoting }
+        set { csvReadingOptions.usesQuoting = newValue }
     }
 
     /// A Boolean value that indicates whether to enable escaping.
@@ -80,20 +80,20 @@ public struct ReadingOptions {
     /// When `true`, you can escape special characters, such as the field delimiter, by prefixing them with
     /// the escape character, which is the backslash (`\`) by default. Defaults to `false`.
     public var usesEscaping: Bool {
-        get { tabularOptions.usesEscaping }
-        set { tabularOptions.usesEscaping = newValue }
+        get { csvReadingOptions.usesEscaping }
+        set { csvReadingOptions.usesEscaping = newValue }
     }
 
     /// The character that separates data fields in a CSV file, typically a comma.
     ///
     /// Defaults to comma (`,`).
-    public var delimiter: Character { tabularOptions.delimiter }
+    public var delimiter: Character { csvReadingOptions.delimiter }
 
     /// The character that precedes other characters, such as quotation marks,
     /// so that the parser interprets them as literal characters instead of special ones.
     ///
     /// Defaults to backslash(`\`).
-    public var escapeCharacter: Character { tabularOptions.escapeCharacter }
+    public var escapeCharacter: Character { csvReadingOptions.escapeCharacter }
 
     public var dataParser: ((String) -> Data?)?
     
@@ -117,7 +117,7 @@ public struct ReadingOptions {
         decimalParser: ((String) -> Decimal?)? = nil,
         urlParser: ((String) -> URL?)? = nil
     ) {
-        tabularOptions = .init(
+        csvReadingOptions = .init(
             hasHeaderRow: hasHeaderRow,
             nilEncodings: nilEncodings,
             trueEncodings: trueEncodings,
@@ -134,7 +134,7 @@ public struct ReadingOptions {
         self.urlParser = urlParser
     }
 
-    public init() { tabularOptions = .init() }
+    public init() { csvReadingOptions = .init() }
     
     func decode<T: Decodable>(_ type: T.Type, forKey key: CodingKey?, rowNumber: Int, decoding: DataDecoder) throws -> T {
         if let parser = parserForType(type) {

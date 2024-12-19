@@ -41,6 +41,6 @@ public struct TabularCSVWriter<RowType: Encodable> {
     
     public func write() throws {
         let dataFrame = try DataFrameEncoder(options: options).encode(header: header, values: rows)
-        try dataFrame.writeCSV(to: fileURL, options: options.tabularOptions)
+        try dataFrame.writeCSV(to: fileURL, options: options.csvWritingOptions)
     }
 }

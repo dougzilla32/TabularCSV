@@ -120,7 +120,7 @@ public struct TabularCSVReader<DecodableType: Decodable, DecodableRowType: Decod
     
     public func read() throws -> [DecodableType] {
         let columnTypes = try determineColumnTypes()
-        let dataFrame = try DataFrame(contentsOfCSVFile: URL(fileURLWithPath: filePath), types: columnTypes, options: options.tabularOptions)
+        let dataFrame = try DataFrame(contentsOfCSVFile: URL(fileURLWithPath: filePath), types: columnTypes, options: options.csvReadingOptions)
         
         let rowMapping: [Int?]? =
             options.hasHeaderRow
@@ -150,7 +150,7 @@ public struct TabularCSVReader<DecodableType: Decodable, DecodableRowType: Decod
             options.hasHeaderRow
             ? Dictionary(uniqueKeysWithValues: header.map { ($0, CSVType.string) })
             : [:]
-        let dataFrame = try DataFrame(csvData: csvData.data, types: stringTypes, options: options.tabularOptions)
+        let dataFrame = try DataFrame(csvData: csvData.data, types: stringTypes, options: options.csvReadingOptions)
 
         let headerNames: [String]
         let row: [String?]
