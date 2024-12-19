@@ -29,6 +29,12 @@ protocol DataDecoder: Decoder {
     func nextStringIfPresent() -> String?
 }
 
+extension Int {
+    var atRow: String {
+        self >= 0 ? " at row \(self+1)" : ""
+    }
+}
+
 final class RowCollection<Row: TypedRow> {
     let row: Row
     let rowNumber: Int
