@@ -21,7 +21,7 @@ public struct TabularCSVWriter {
         self.init(options: opts)
     }
     
-    public func write<T: Encodable>(_ values: [T], header: [String]?, filePath: String) throws {
+    public func write<T: Encodable>(_ values: [T], header: [String]?, toPath filePath: String) throws {
         let includesHeader = self.options.includesHeader(header != nil)
         let fileURL = URL(fileURLWithPath: filePath)
         let columns = try DataFrameEncoder(options: includesHeader.writingOptions).encode(values, header: header)
@@ -34,9 +34,9 @@ public struct TabularCSVWriter {
         return try DataFrame(columns: columns).csvRepresentation(options: includesHeader.csvWritingOptions)
     }
     
-    public func write<T: KeyedEncodable>(_ values: [T], includesHeader: Bool = true, filePath: String) throws {
+    public func write<T: KeyedEncodable>(_ values: [T], includesHeader: Bool = true, toPath filePath: String) throws {
         let header = T.CodingKeysType.allCases.map { $0.rawValue }
-        try write(values, header: header, filePath: filePath)
+        try write(values, header: header, toPath: filePath)
     }
     
     public func csvRepresentation<T: KeyedEncodable>(_ values: [T], includesHeader: Bool = true) throws -> Data {

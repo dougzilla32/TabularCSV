@@ -108,7 +108,7 @@ public struct TabularCSVReader {
         self.init(options: opts)
     }
     
-    public func read<T: Decodable>(_ type: T.Type, header: [String]?, filePath: String) throws -> [T] {
+    public func read<T: Decodable>(_ type: T.Type, header: [String]?, fromPath filePath: String) throws -> [T] {
         try read(type, header: header, dataSource: DataSource.file(filePath))
     }
     
@@ -116,7 +116,7 @@ public struct TabularCSVReader {
         try read(type, header: header, dataSource: DataSource.data(csvData))
     }
     
-    public func read<T: KeyedDecodable>(_ type: T.Type, hasHeaderRow: Bool = true, filePath: String) throws -> [T] {
+    public func read<T: KeyedDecodable>(_ type: T.Type, hasHeaderRow: Bool = true, fromPath filePath: String) throws -> [T] {
         return try read(type, hasHeaderRow: hasHeaderRow, dataSource: DataSource.file(filePath))
     }
     
