@@ -10,15 +10,7 @@ import Foundation
 import TabularData
 
 public struct WritingOptions {
-    public var csvWritingOptions: CSVWritingOptions
-    
-    /// A Boolean value that indicates whether to write a header with the column names.
-    ///
-    /// Defaults to `true`.
-    public var includesHeader: Bool {
-        get { csvWritingOptions.includesHeader }
-        set { csvWritingOptions.includesHeader = newValue }
-    }
+    private var csvWritingOptions: CSVWritingOptions
     
     /// A closure that maps dates to their string representations.
     ///
@@ -90,7 +82,6 @@ public struct WritingOptions {
     public var urlFormatter: ((URL) -> String)?
     
     public init(
-        includesHeader: Bool = true,
         nilEncoding: String = "",
         trueEncoding: String = "true",
         falseEncoding: String = "false",
@@ -101,7 +92,7 @@ public struct WritingOptions {
         urlFormatter: ((URL) -> String)? = nil
     ) {
         csvWritingOptions = CSVWritingOptions(
-            includesHeader: includesHeader,
+            includesHeader: true,
             nilEncoding: nilEncoding,
             trueEncoding: trueEncoding,
             falseEncoding: falseEncoding,
@@ -114,6 +105,12 @@ public struct WritingOptions {
     }
 
     public init() { csvWritingOptions = .init() }
+    
+    func includesHeader(_ value: Bool) -> (writingOptions: Self, csvWritingOptions: CSVWritingOptions) {
+        var options = self
+        options.csvWritingOptions.includesHeader = value
+        return (writingOptions: options, csvWritingOptions: options.csvWritingOptions)
+    }
     
     func encode<T: Encodable>(_ type: T.Type, value: T, rowNumber: Int, encoding: Encoder) throws {
         if let formatter = formatterForType(type) {

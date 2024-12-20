@@ -14,12 +14,12 @@ public struct DataFrameEncoder {
         self.options = options
     }
 
-    public func encode<T: Encodable>(header: [String], values: [T]) throws -> DataFrame {
+    public func encode<T: Encodable>(_ values: [T], header: [String]?) throws -> [AnyColumn] {
         let dataFrameEncoding = DataFrameEncoding(header: header, numRows: values.count, options: options)
         for value in values {
             try dataFrameEncoding.encode(value)
         }
-        return DataFrame(columns: dataFrameEncoding.data.columns)
+        return dataFrameEncoding.data.columns
     }
 }
 
@@ -28,7 +28,7 @@ fileprivate struct DataFrameEncoding: Encoder {
     var codingPath: [CodingKey] = []
     let userInfo: [CodingUserInfoKey : Any] = [:]
 
-    init(header: [String], numRows: Int, options: WritingOptions) {
+    init(header: [String]?, numRows: Int, options: WritingOptions) {
         data = ColumnCollection(header: header, numRows: numRows, options: options)
     }
     
@@ -101,7 +101,7 @@ fileprivate struct DataFrameKeyedEncoding<Key: CodingKey>: KeyedEncodingContaine
 fileprivate struct DataFrameUnkeyedEncoding: UnkeyedEncodingContainer {
     private let encoding: DataFrameEncoding
     var codingPath: [CodingKey] = []
-    var count: Int { data.header.count }
+    var count: Int { data.header?.count ?? 0 }
 
     init(encoding: DataFrameEncoding) { self.encoding = encoding }
     

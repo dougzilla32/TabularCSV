@@ -10,16 +10,8 @@ import Foundation
 import TabularData
 
 public struct ReadingOptions {
-    public var csvReadingOptions: CSVReadingOptions
+    private var csvReadingOptions: CSVReadingOptions
     
-    /// A Boolean value that indicates whether the CSV file has a header row.
-    ///
-    /// Defaults to `true`.
-    public var hasHeaderRow: Bool {
-        get { csvReadingOptions.hasHeaderRow }
-        set { csvReadingOptions.hasHeaderRow = newValue }
-    }
-
     /// The set of strings that stores acceptable spellings for empty values.
     ///
     /// Defaults to `["", "#N/A", "#N/A N/A", "#NA", "N/A", "NA", "NULL", "n/a", "null"]`.
@@ -102,7 +94,6 @@ public struct ReadingOptions {
     public var urlParser: ((String) -> URL?)?
     
     public init(
-        hasHeaderRow: Bool = true,
         nilEncodings: Set<String>   = [ "", "#N/A", "#N/A N/A", "#NA", "N/A", "NA", "NULL", "n/a", "null" ],
         trueEncodings: Set<String>  = [ "1", "True", "TRUE", "true" ],
         falseEncodings: Set<String> = [ "0", "False", "FALSE", "false" ],
@@ -118,7 +109,7 @@ public struct ReadingOptions {
         urlParser: ((String) -> URL?)? = nil
     ) {
         csvReadingOptions = .init(
-            hasHeaderRow: hasHeaderRow,
+            hasHeaderRow: true,
             nilEncodings: nilEncodings,
             trueEncodings: trueEncodings,
             falseEncodings: falseEncodings,
@@ -135,6 +126,12 @@ public struct ReadingOptions {
     }
 
     public init() { csvReadingOptions = .init() }
+    
+    func hasHeaderRow(_ value: Bool) -> (readingOptions: Self, csvReadingOptions: CSVReadingOptions) {
+        var options = self
+        options.csvReadingOptions.hasHeaderRow = value
+        return (readingOptions: options, csvReadingOptions: options.csvReadingOptions)
+    }
     
     func decode<T: Decodable>(_ type: T.Type, forKey key: CodingKey?, rowNumber: Int, decoding: DataDecoder) throws -> T {
         if let parser = parserForType(type) {

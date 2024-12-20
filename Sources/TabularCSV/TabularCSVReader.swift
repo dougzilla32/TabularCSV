@@ -9,21 +9,21 @@
 import Foundation
 import TabularData
 
-public typealias CodableRow = DecodableRow & EncodableRow
+public typealias KeyedCodable = KeyedDecodable & KeyedEncodable
 
-public protocol DecodableRow: Decodable {
+public protocol KeyedDecodable: Decodable {
     associatedtype CodingKeysType: CaseIterable & RawRepresentable where CodingKeysType.RawValue == String
 
     var row: Int { get set }
     func postInit()
 }
 
-public extension DecodableRow {
+public extension KeyedDecodable {
     var row: Int { get { -1 } set { } }
     func postInit() { }
 }
 
-public protocol EncodableRow: Encodable {
+public protocol KeyedEncodable: Encodable {
     associatedtype CodingKeysType: CaseIterable & RawRepresentable where CodingKeysType.RawValue == String
 }
 
@@ -41,7 +41,7 @@ public enum DataError: Error {
 //    func cancel() { }
 //}
 
-public struct TabularCSVReader<DecodableType: Decodable, DecodableRowType: DecodableRow> {
+public struct TabularCSVReader {
     //    public static func streamIn<T: Codable>(
     //        type: T.Type,
     //        header: [String],
@@ -86,78 +86,73 @@ public struct TabularCSVReader<DecodableType: Decodable, DecodableRowType: Decod
     //        }
     //    }
     
-    enum RowType {
-        case decodable(DecodableType.Type)
-        case decodableRow(DecodableRowType.Type)
+    private enum RowType {
+        case decodable(Decodable.Type)
+        case KeyedDecodable(any KeyedDecodable.Type)
     }
     
-    enum DataSource {
+    private enum DataSource {
         case file(String)
         case data(Data)
     }
-    
-    private let rowType: RowType
-    private let header: [String]
+
     private let options: ReadingOptions
 
-    init(type: DecodableType.Type, header: [String], options: ReadingOptions = .init()) {
-        self.rowType = .decodable(type)
-        self.header = header
+    public init(options: ReadingOptions = .init()) {
         self.options = options
     }
     
-    init(type: DecodableType.Type, header: [String], options: ((inout ReadingOptions) -> Void)) {
+    public init(options: ((inout ReadingOptions) -> Void)) {
         var opts = ReadingOptions()
         options(&opts)
-        self.init(type: type, header: header, options: opts)
+        self.init(options: opts)
     }
     
-    init(type: DecodableRowType.Type, options: ReadingOptions = .init()) {
-        self.rowType = .decodableRow(type)
-        self.header = DecodableRowType.CodingKeysType.allCases.map { $0.rawValue }
-        self.options = options
+    public func read<T: Decodable>(_ type: T.Type, header: [String]?, filePath: String) throws -> [T] {
+        try read(type, header: header, dataSource: DataSource.file(filePath))
     }
     
-    init(type: DecodableRowType.Type, options: ((inout ReadingOptions) -> Void)) {
-        var opts = ReadingOptions()
-        options(&opts)
-        self.init(type: type, options: opts)
+    public func read<T: Decodable>(_ type: T.Type, header: [String]?, csvData: Data) throws -> [T] {
+        try read(type, header: header, dataSource: DataSource.data(csvData))
     }
     
-    public func read(filePath: String) throws -> [DecodableType] {
-        let columnTypes = try determineColumnTypes(dataSource: DataSource.file(filePath))
-        let dataFrame = try DataFrame(contentsOfCSVFile: URL(fileURLWithPath: filePath), types: columnTypes, options: options.csvReadingOptions)
-        return try read(dataFrame: dataFrame)
+    public func read<T: KeyedDecodable>(_ type: T.Type, hasHeaderRow: Bool = true, filePath: String) throws -> [T] {
+        return try read(type, hasHeaderRow: hasHeaderRow, dataSource: DataSource.file(filePath))
     }
     
-    public func read(csvData: Data) throws -> [DecodableType] {
-        let columnTypes = try determineColumnTypes(dataSource: DataSource.data(csvData))
-        let dataFrame = try DataFrame(csvData: csvData, types: columnTypes, options: options.csvReadingOptions)
-        return try read(dataFrame: dataFrame)
+    public func read<T: KeyedDecodable>(_ type: T.Type, hasHeaderRow: Bool = true, csvData: Data) throws -> [T] {
+        return try read(type, hasHeaderRow: hasHeaderRow, dataSource: DataSource.data(csvData))
     }
     
-    private func read(dataFrame: DataFrame) throws -> [DecodableType] {
-        let rowMapping: [Int?]? =
-            options.hasHeaderRow
-            ? try createHeaderIndexMap(csvHeader: dataFrame.columns.map(\.name))
-            : nil
-        
-        let dataFrameDecoder = DataFrameDecoder(options: options)
-        switch rowType {
-        case .decodable(let type):
-            return try dataFrameDecoder.decode(type, dataFrame: dataFrame, rowMapping: rowMapping)
-        case .decodableRow(let type):
-            var rows = try dataFrameDecoder.decode(type, dataFrame: dataFrame, rowMapping: rowMapping)
-            for r in 0..<rows.count {
-                rows[r].row = r+1
-                rows[r].postInit()
-            }
-            return rows.map { $0 as! DecodableType }
+    private func read<T: Decodable>(_ type: T.Type, header: [String]?, dataSource: DataSource) throws -> [T] {
+        let columnTypes = try determineColumnTypes(.decodable(type), header: header, dataSource: dataSource)
+        let hasHeaderRow = options.hasHeaderRow(header != nil)
+        let dataFrame: DataFrame
+
+        switch dataSource {
+        case .file(let filePath):
+            dataFrame = try DataFrame(contentsOfCSVFile: URL(fileURLWithPath: filePath), types: columnTypes, options: hasHeaderRow.csvReadingOptions)
+        case .data(let csvData):
+            dataFrame = try DataFrame(csvData: csvData, types: columnTypes, options: hasHeaderRow.csvReadingOptions)
         }
+
+        let rowMapping: [Int?]? = try createHeaderIndexMap(expectedHeader: header, csvHeader: dataFrame.columns.map(\.name))
+        let dataFrameDecoder = DataFrameDecoder(options: options)
+        return try dataFrameDecoder.decode(type, dataFrame: dataFrame, rowMapping: rowMapping)
     }
     
-    private func determineColumnTypes(dataSource: DataSource) throws -> [String: CSVType] {
-        let numLinesToRead = options.hasHeaderRow ? 2 : 1
+    private func read<T: KeyedDecodable>(_ type: T.Type, hasHeaderRow: Bool, dataSource: DataSource) throws -> [T] {
+        let header: [String]? = hasHeaderRow ? T.CodingKeysType.allCases.map { $0.rawValue } : nil
+        var rows = try read(type, header: header, dataSource: dataSource)
+        for r in 0..<rows.count {
+            rows[r].row = r+1
+            rows[r].postInit()
+        }
+        return rows
+    }
+    
+    private func determineColumnTypes(_ rowType: RowType, header: [String]?, dataSource: DataSource) throws -> [String: CSVType] {
+        let numLinesToRead = header != nil ? 2 : 1
         let firstLittleBit: (data: Data, lines: [String])
         switch dataSource {
         case .file(let filePath):
@@ -167,17 +162,21 @@ public struct TabularCSVReader<DecodableType: Decodable, DecodableRowType: Decod
         }
         guard firstLittleBit.lines.count == numLinesToRead else { return [:] }
         
-        let stringTypes: [String: CSVType] =
-            options.hasHeaderRow
-            ? Dictionary(uniqueKeysWithValues: header.map { ($0, CSVType.string) })
-            : [:]
-        let dataFrame = try DataFrame(csvData: firstLittleBit.data, types: stringTypes, options: options.csvReadingOptions)
+        let stringTypes: [String: CSVType]
+        if let header {
+            stringTypes = Dictionary(uniqueKeysWithValues: header.map { ($0, CSVType.string) })
+        } else {
+            stringTypes = [:]
+        }
+
+        let hasHeaderRow = options.hasHeaderRow(header != nil)
+        let dataFrame = try DataFrame(csvData: firstLittleBit.data, types: stringTypes, options: hasHeaderRow.csvReadingOptions)
 
         let headerNames: [String]
         let row: [String?]
-        if options.hasHeaderRow {
+        if let header {
             headerNames = dataFrame.columns.map(\.name)
-            let headerIndexMap = try createHeaderIndexMap(csvHeader: headerNames)
+            let headerIndexMap = try createHeaderIndexMap(expectedHeader: header, csvHeader: headerNames)
             row = TabularCSVReader.reorder(row: dataFrame.rows[0].map { $0 as? String ?? "" }, headersIndexMap: headerIndexMap)
         } else {
             headerNames = (0..<dataFrame.rows[0].count).map { "Column \($0)" }
@@ -190,7 +189,7 @@ public struct TabularCSVReader<DecodableType: Decodable, DecodableRowType: Decod
         switch rowType {
         case .decodable(let type):
             try typeDecoder.decode(type, from: row, rowNumber: 1)
-        case .decodableRow(let type):
+        case .KeyedDecodable(let type):
             try typeDecoder.decode(type, from: row, rowNumber: 1)
         }
         
@@ -201,26 +200,30 @@ public struct TabularCSVReader<DecodableType: Decodable, DecodableRowType: Decod
         return columnTypes
     }
     
-    func createHeaderIndexMap(csvHeader: [String]) throws -> [Int?] {
-        // Find unexpected headers
-        let unexpectedHeaders = csvHeader.filter { !header.contains($0) }
+    private func createHeaderIndexMap(expectedHeader: [String]?, csvHeader: [String]) throws -> [Int?]? {
+        guard let expectedHeader else { return nil }
         
+        // Find unexpected headers
+//        let unexpectedHeader = csvHeader.filter { !expectedHeader.contains($0) }
+//        
         // Throw an error if unexpected headers are found
-        if !unexpectedHeaders.isEmpty {
-            throw NSError(
-                domain: "CSVParsingError",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Unexpected headers found: \(unexpectedHeaders)"]
-            )
-        }
+//        if !unexpectedHeader.isEmpty {
+//            throw NSError(
+//                domain: "CSVParsingError",
+//                code: 1,
+//                userInfo: [NSLocalizedDescriptionKey: "Unexpected header found: \(unexpectedHeader)"]
+//            )
+//        }
         
         // Map headers to their indices
-        return header.map { headerName in
-            csvHeader.firstIndex(of: headerName)
+        return expectedHeader.map { expectedHeaderName in
+            csvHeader.firstIndex(of: expectedHeaderName)
         }
     }
 
-    static func reorder(row: [String], headersIndexMap: [Int?]) -> [String?] {
+    private static func reorder(row: [String], headersIndexMap: [Int?]?) -> [String?] {
+        guard let headersIndexMap else { return row }
+
         return headersIndexMap.map { index in
             guard let index = index, index < row.count else { return nil }
             return row[index]
@@ -257,7 +260,7 @@ public struct TabularCSVReader<DecodableType: Decodable, DecodableRowType: Decod
         return (data: string.data(using: .utf8)!, lines: lines)
     }
     
-    static func convertLines(from data: Data, limit: Int, encoding: String.Encoding = .utf8) throws -> (data: Data, lines: [String]) {
+    private static func convertLines(from data: Data, limit: Int, encoding: String.Encoding = .utf8) throws -> (data: Data, lines: [String]) {
         // Buffer to hold the partial result
         var lines: [String] = []
 
