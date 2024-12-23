@@ -85,9 +85,14 @@ fileprivate struct TypeKeyedDecoding<Key: CodingKey>: KeyedDecodingContainerProt
     var types: DataTypes { decoding.types }
 
     private func addType<T: CSVInitializable>(_ type: T.Type, forKey key: Key) throws -> T {
-        _ = try types.data.nextString(forKey: key)
         types.csvTypes.append(type.csvType)
+        _ = try types.data.nextString(forKey: key)
         return T()
+    }
+    
+    private func addStringType<T: CSVInitializable>(_ type: T.Type, forKey key: Key) throws -> String {
+        types.csvTypes.append(type.csvType)
+        return try types.data.nextString(forKey: key)
     }
     
     func decodeNil(forKey key: Key) throws -> Bool {
@@ -96,7 +101,7 @@ fileprivate struct TypeKeyedDecoding<Key: CodingKey>: KeyedDecodingContainerProt
     }
     
     func decode(_ type: Bool.Type,    forKey key: Key) throws -> Bool    { try addType(type, forKey: key) }
-    func decode(_ type: String.Type,  forKey key: Key) throws -> String  { try addType(type, forKey: key) }
+    func decode(_ type: String.Type,  forKey key: Key) throws -> String  { try addStringType(type, forKey: key) }
     func decode(_ type: Double.Type,  forKey key: Key) throws -> Double  { try addType(type, forKey: key) }
     func decode(_ type: Float.Type,   forKey key: Key) throws -> Float   { try addType(type, forKey: key) }
     func decode(_ type: Int.Type,     forKey key: Key) throws -> Int     { try addType(type, forKey: key) }
@@ -112,17 +117,22 @@ fileprivate struct TypeKeyedDecoding<Key: CodingKey>: KeyedDecodingContainerProt
     
     func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T {
         types.csvTypes.append(.string)
-        return try types.data.decode(type, decoding: decoding)
+        return try types.data.decode(type, forKey: key, decoding: decoding)
     }
 
     private func addTypeIfPresent<T: CSVInitializable>(_ type: T.Type) -> T {
-        _ = types.data.nextStringIfPresent()
         types.csvTypes.append(type.csvType)
+        _ = types.data.nextStringIfPresent()
         return T()
     }
     
+    private func addStringTypeIfPresent<T: CSVInitializable>(_ type: T.Type) -> String? {
+        types.csvTypes.append(type.csvType)
+        return types.data.nextStringIfPresent()
+    }
+    
     func decodeIfPresent(_ type: Bool.Type,    forKey key: Key) throws -> Bool?    { addTypeIfPresent(type) }
-    func decodeIfPresent(_ type: String.Type,  forKey key: Key) throws -> String?  { addTypeIfPresent(type) }
+    func decodeIfPresent(_ type: String.Type,  forKey key: Key) throws -> String?  { addStringTypeIfPresent(type) }
     func decodeIfPresent(_ type: Double.Type,  forKey key: Key) throws -> Double?  { addTypeIfPresent(type) }
     func decodeIfPresent(_ type: Float.Type,   forKey key: Key) throws -> Float?   { addTypeIfPresent(type) }
     func decodeIfPresent(_ type: Int.Type,     forKey key: Key) throws -> Int?     { addTypeIfPresent(type) }
@@ -165,16 +175,19 @@ fileprivate struct TypeUnkeyedDecoding: UnkeyedDecodingContainer {
 
     private func checkEnd() throws {
         if isAtEnd {
-            throw CSVDecodingError.dataCorrupted(
-                DecodingError.Context(codingPath: [],
-                                      debugDescription: "Unkeyed container is at end\(types.data.rowNumber.atRow)."))
+            throw CSVDecodingError.isAtEnd(rowNumber: types.data.rowNumber)
         }
     }
 
     private func addType<T: CSVInitializable>(_ type: T.Type) throws -> T {
-        _ = try types.data.nextString()
         types.csvTypes.append(type.csvType)
+        _ = try types.data.nextString()
         return T()
+    }
+    
+    private func addStringType<T: CSVInitializable>(_ type: T.Type) throws -> String {
+        types.csvTypes.append(type.csvType)
+        return try types.data.nextString()
     }
     
     mutating func decodeNil() throws -> Bool {
@@ -183,7 +196,7 @@ fileprivate struct TypeUnkeyedDecoding: UnkeyedDecodingContainer {
     }
     
     mutating func decode(_ type: Bool.Type   ) throws -> Bool    { try addType(type) }
-    mutating func decode(_ type: String.Type ) throws -> String  { try addType(type) }
+    mutating func decode(_ type: String.Type ) throws -> String  { try addStringType(type) }
     mutating func decode(_ type: Double.Type ) throws -> Double  { try addType(type) }
     mutating func decode(_ type: Float.Type  ) throws -> Float   { try addType(type) }
     mutating func decode(_ type: Int.Type    ) throws -> Int     { try addType(type) }
@@ -203,13 +216,18 @@ fileprivate struct TypeUnkeyedDecoding: UnkeyedDecodingContainer {
     }
 
     private func addTypeIfPresent<T: CSVInitializable>(_ type: T.Type) -> T {
-        _ = types.data.nextStringIfPresent()
         types.csvTypes.append(type.csvType)
+        _ = types.data.nextStringIfPresent()
         return T()
     }
     
+    private func addStringTypeIfPresent<T: CSVInitializable>(_ type: T.Type) -> String? {
+        types.csvTypes.append(type.csvType)
+        return types.data.nextStringIfPresent()
+    }
+    
     mutating func decodeIfPresent(_ type: Bool.Type   ) throws -> Bool?    { addTypeIfPresent(type) }
-    mutating func decodeIfPresent(_ type: String.Type ) throws -> String?  { addTypeIfPresent(type) }
+    mutating func decodeIfPresent(_ type: String.Type ) throws -> String?  { addStringTypeIfPresent(type) }
     mutating func decodeIfPresent(_ type: Double.Type ) throws -> Double?  { addTypeIfPresent(type) }
     mutating func decodeIfPresent(_ type: Float.Type  ) throws -> Float?   { addTypeIfPresent(type) }
     mutating func decodeIfPresent(_ type: Int.Type    ) throws -> Int?     { addTypeIfPresent(type) }
@@ -229,10 +247,19 @@ fileprivate struct TypeUnkeyedDecoding: UnkeyedDecodingContainer {
     }
 
     mutating func nestedContainer<NestedKey: CodingKey>(keyedBy keyType: NestedKey.Type) throws -> KeyedDecodingContainer<NestedKey> {
-        KeyedDecodingContainer(TypeKeyedDecoding<NestedKey>(decoding: decoding))
+        try checkEnd()
+        return KeyedDecodingContainer(TypeKeyedDecoding<NestedKey>(decoding: decoding))
     }
-    mutating func nestedUnkeyedContainer() throws -> UnkeyedDecodingContainer { TypeUnkeyedDecoding(decoding: decoding) }
-    mutating func superDecoder() throws -> Decoder { decoding }
+
+    mutating func nestedUnkeyedContainer() throws -> UnkeyedDecodingContainer {
+        try checkEnd()
+        return TypeUnkeyedDecoding(decoding: decoding)
+    }
+
+    mutating func superDecoder() throws -> Decoder {
+        try checkEnd()
+        return decoding
+    }
 }
 
 fileprivate struct TypeSingleValueDecoding: SingleValueDecodingContainer {
@@ -244,9 +271,14 @@ fileprivate struct TypeSingleValueDecoding: SingleValueDecodingContainer {
     var types: DataTypes { decoding.types }
 
     private func addType<T: CSVInitializable>(_ type: T.Type) throws -> T {
-        _ = try types.data.nextString()
         types.csvTypes.append(type.csvType)
+        _ = try types.data.nextString()
         return T()
+    }
+    
+    private func addStringType<T: CSVInitializable>(_ type: T.Type) throws -> String {
+        types.csvTypes.append(type.csvType)
+        return try types.data.nextString()
     }
     
     func decodeNil() -> Bool {
@@ -255,7 +287,7 @@ fileprivate struct TypeSingleValueDecoding: SingleValueDecodingContainer {
     }
     
     func decode(_ type: Bool.Type   ) throws -> Bool    { try addType(type) }
-    func decode(_ type: String.Type ) throws -> String  { try addType(type) }
+    func decode(_ type: String.Type ) throws -> String  { try addStringType(type) }
     func decode(_ type: Double.Type ) throws -> Double  { try addType(type) }
     func decode(_ type: Float.Type  ) throws -> Float   { try addType(type) }
     func decode(_ type: Int.Type    ) throws -> Int     { try addType(type) }

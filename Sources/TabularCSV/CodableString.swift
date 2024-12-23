@@ -48,11 +48,7 @@ public extension CodableString {
         let string = try container.decode(String.self)
         
         guard let value = Self.decode(string: string) else {
-            let structName = String(describing: Self.self)
-            throw CSVDecodingError.dataCorruptedError(
-                in: container,
-                debugDescription: "Cannot decode \(structName) with value \"\(string)\""
-            )
+            throw CodableStringError.invalidFormat(string: string)
         }
         
         self.init(wrappedValue: value)
@@ -90,19 +86,11 @@ public extension OptionalCodableString {
     // Decodable conformance:
     // Custom initializer to decode the property from a decoder.
     // This handles the decoding of optional string values into their corresponding ValueType.
+    // - Throws: `CodableStringError.invalidFormat` if the string cannot be decoded.
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let string = try container.decode(String.self)
-        let value: CodableStringType.ValueType?
-        do {
-            value = try Self.decode(string: string)
-        } catch {
-            let structName = String(describing: Self.self)
-            throw CSVDecodingError.dataCorruptedError(
-                in: container,
-                debugDescription: "Cannot decode \(structName) with value \"\(string)\"."
-            )
-        }
+        let value = try Self.decode(string: string)
         self.init(wrappedValue: value)
     }
 
@@ -118,14 +106,14 @@ public extension OptionalCodableString {
     ///
     /// - Parameter string: The string to decode.
     /// - Returns: The decoded ValueType if successful, or `nil` if the string is empty.
-    /// - Throws: `OptionalCodingError.invalidFormat` if the string cannot be decoded and is not empty.
+    /// - Throws: `CodableStringError.invalidFormat` if the string cannot be decoded and is not empty.
     static func decode(string: String) throws -> CodableStringType.ValueType? {
         if let value = CodableStringType.decode(string: string) {
             return value
         } else if string.isEmpty {
             return nil
         } else {
-            throw OptionalCodingError.invalidFormat
+            throw CodableStringError.invalidFormat(string: string)
         }
     }
     
@@ -141,10 +129,9 @@ public extension OptionalCodableString {
     }
 }
 
-// Defines errors related to optional coding operations.
-public enum OptionalCodingError: Error {
+public enum CodableStringError: Error {
     // Indicates that the string format is invalid and cannot be decoded.
-    case invalidFormat
+    case invalidFormat(string: String)
 }
 
 //  MARK: OptionalCodingWrapper is from:
@@ -200,7 +187,7 @@ public struct OrderedSet<T: Hashable & Sendable>: ExpressibleByArrayLiteral, Sen
     public subscript(index: Int) -> T { array[index] }
 }
 
-// MARK: - Coders for boolean values
+// MARK: - Coders for booleans
 
 public protocol CodableBool: CodableString & Hashable where ValueType == Bool {
     static var trueValues: OrderedSet<String> { get }
@@ -216,8 +203,8 @@ public extension CodableBool {
 public struct BoolCoder: CodableBool {
     public var wrappedValue: Bool
     public init(wrappedValue: Bool) { self.wrappedValue = wrappedValue }
-    public static let trueValues: OrderedSet<String> = ["True", "TRUE", "true", "1"]
-    public static let falseValues: OrderedSet<String> = ["False", "FALSE", "false", "0"]
+    public static let trueValues: OrderedSet<String> = ["true", "True", "TRUE",  "1"]
+    public static let falseValues: OrderedSet<String> = ["false", "False", "FALSE", "0"]
 }
 
 @propertyWrapper
@@ -239,13 +226,28 @@ public struct OneZeroOptional: OptionalCodableString {
 public struct OnOff: CodableBool {
     public let wrappedValue: Bool
     public init(wrappedValue: Bool) { self.wrappedValue = wrappedValue }
-    public static let trueValues: OrderedSet<String> = ["On", "ON", "on"]
-    public static let falseValues: OrderedSet<String> = ["Off", "OFF", "off"]
+    public static let trueValues: OrderedSet<String> = ["on", "On", "ON"]
+    public static let falseValues: OrderedSet<String> = ["off", "Off", "OFF"]
 }
 
 @propertyWrapper
 public struct OnOffOptional: OptionalCodableString {
     public typealias CodableStringType = OnOff
+    public var wrappedValue: Bool?
+    public init(wrappedValue: Bool?) { self.wrappedValue = wrappedValue }
+}
+
+@propertyWrapper
+public struct YesNo: CodableBool {
+    public let wrappedValue: Bool
+    public init(wrappedValue: Bool) { self.wrappedValue = wrappedValue }
+    public static let trueValues: OrderedSet<String> = ["yes", "Yes", "YES"]
+    public static let falseValues: OrderedSet<String> = ["no", "No", "NO"]
+}
+
+@propertyWrapper
+public struct YesNoOptional: OptionalCodableString {
+    public typealias CodableStringType = YesNo
     public var wrappedValue: Bool?
     public init(wrappedValue: Bool?) { self.wrappedValue = wrappedValue }
 }
@@ -271,7 +273,7 @@ public struct EnumOptionalCodable<T: RawRepresentable>: OptionalCodableString wh
     public init(wrappedValue: T?) { self.wrappedValue = wrappedValue }
 }
 
-// MARK: Coders for Date and booleans
+// MARK: Coders for Date
 
 @propertyWrapper
 public struct DateAndTimeCodable: CodableString, Hashable {

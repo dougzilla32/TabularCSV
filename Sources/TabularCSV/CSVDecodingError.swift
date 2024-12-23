@@ -6,8 +6,10 @@
 //  Copyright © 2024 Doug. All rights reserved.
 //
 
+import Foundation
+
 public struct CSVDecodingError: Error, CustomStringConvertible {
-    private let error: DecodingError
+    public let error: DecodingError
 
     public static func typeMismatch(_ type: any Any.Type, _ context: DecodingError.Context) -> CSVDecodingError {
         CSVDecodingError(error: DecodingError.typeMismatch(type, context))
@@ -40,42 +42,50 @@ public struct CSVDecodingError: Error, CustomStringConvertible {
     public var description: String {
         switch error {
         case .typeMismatch(let anyType, let context):
-            return """
-                typeMismatch(
-                    type: \"\(anyType)\",
-                    codingPath: \"\(name(for: context.codingPath))\",
-                    debugDescription: \(context.debugDescription.replacingOccurrences(of: "\"", with: "\""))
-                )
-                """
+            return "typeMismatch(type: \"\(anyType)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
         case .valueNotFound(let anyType, let context):
-            return """
-                valueNotFound(
-                    type: \"\(anyType)\",
-                    codingPath: \"\(name(for: context.codingPath))\",
-                    debugDescription: \(context.debugDescription.replacingOccurrences(of: "\"", with: "\""))
-                )
-                """
+            return "valueNotFound(type: \"\(anyType)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
         case .keyNotFound(let anyKey, let context):
-            return """
-                keyNotFound(
-                    key: \"\(anyKey)\",
-                    codingPath: \"\(name(for: context.codingPath))\",
-                    debugDescription: \(context.debugDescription.replacingOccurrences(of: "\"", with: "\""))
-                )
-                """
+            return "keyNotFound(key: \"\(anyKey)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
         case .dataCorrupted(let context):
-            return """
-                dataCorrupted(
-                    codingPath: \"\(name(for: context.codingPath))\",
-                    debugDescription: \(context.debugDescription.replacingOccurrences(of: "\"", with: "\""))
-                )
-                """
+            return "dataCorrupted(codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
         default:
             return error.localizedDescription
         }
     }
     
-    private func name(for codingPath: [CodingKey]) -> String {
+    private func name(_ codingPath: [CodingKey]) -> String {
         return codingPath.map(\.stringValue).joined(separator: ".")
+    }
+    
+    private func cleanQuotes(_ string: String) -> String {
+        return string.replacingOccurrences(of: "\"", with: "\"")
+    }
+
+    static func dataCorrupted(string: String, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.dataCorrupted(context(description: "Cannot decode \"\(string)\"", forKey: key, rowNumber: rowNumber))
+    }
+    
+    static func valueNotFound<T>(_ type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.valueNotFound(T.self, context(description: "No more values available", forKey: key, rowNumber: rowNumber))
+    }
+    
+    static func isAtEnd(rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.dataCorrupted(context(description: "Unkeyed container is at end", forKey: nil, rowNumber: rowNumber))
+    }
+    
+    private static func context(description: String, forKey key: CodingKey?, rowNumber: Int) -> DecodingError.Context {
+        var codingPath = [CodingKey]()
+        var description = description
+        if let key = key {
+            codingPath.append(key)
+            description += " for key \"\(key.stringValue)\""
+        }
+        description += "\(atRow(rowNumber))."
+        return DecodingError.Context(codingPath: codingPath, debugDescription: description)
+    }
+    
+    private static func atRow(_ rowNumber: Int) -> String {
+        rowNumber >= 0 ? " at row \(rowNumber+1)" : ""
     }
 }

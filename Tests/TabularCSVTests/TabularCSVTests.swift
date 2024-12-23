@@ -6,6 +6,15 @@ struct Person: Codable {
     let name: String
     let age: Int
     let height: Double
+    @YesNo var tall: Bool
+    @Nationality var nationality: String
+}
+
+struct PersonWithoutHeight: Codable {
+    let name: String
+    let age: Int
+    @YesNo var tall: Bool
+    @Nationality var nationality: String
 }
 
 struct PersonRow: KeyedCodable {
@@ -14,17 +23,43 @@ struct PersonRow: KeyedCodable {
     let name: String
     let age: Int
     let height: Double
+    @YesNo var tall: Bool
+    @Nationality var nationality: String
     
     enum CodingKeys: String, CodingKey, CaseIterable {
         case name = "Name"
         case age = "Age"
         case height = "Height"
+        case tall = "Tall"
+        case nationality = "Nationality"
     }
 }
 
-let PersonHeader = ["Name", "Age", "Height"]
-let PersonCSVHeader = "Name,Age,Height\n"
-let PersonCSVRows = "Alice,23,5.6\nBob,25,6.0\nCharlie,27,5.9\n"
+@propertyWrapper
+public struct Nationality: CodableString {
+    public let wrappedValue: String
+    public init(wrappedValue: String) { self.wrappedValue = wrappedValue }
+
+    public static func decode(string: String) -> String? {
+        switch string {
+        case "US": "United States"
+        case "UK": "United Kingdom"
+        default: nil
+        }
+    }
+        
+    public static func encode(_ value: String) -> String {
+        switch value {
+        case "United States": "US"
+        case "United Kingdom": "UK"
+        default: value
+        }
+    }
+}
+
+let PersonHeader = ["Name", "Age", "Height", "Tall", "Nationality"]
+let PersonCSVHeader = "Name,Age,Height,Tall,Nationality\n"
+let PersonCSVRows = "Alice,23,5.6,yes,UK\nBob,25,6.0,yes,US\nCharlie,27,5.3,no,US\n"
 let PersonCSV = PersonCSVHeader + PersonCSVRows
 
 @Test func testPerson() async throws {
@@ -39,6 +74,12 @@ let PersonCSV = PersonCSVHeader + PersonCSVRows
         let string = String(data: try TabularCSVWriter().csvRepresentation(rows), encoding: .utf8)!
         #expect(string == PersonCSV)
     }
+}
+
+@Test func testPersonWithoutHeight() async throws {
+    let rows = try TabularCSVReader().read(PersonWithoutHeight.self, header: PersonHeader, csvData: PersonCSV.data(using: .utf8)!)
+    let string = String(data: try TabularCSVWriter().csvRepresentation(rows, header: PersonHeader), encoding: .utf8)!
+    #expect(string == PersonCSV)
 }
 
 @Test func testPersonNoHeader() async throws {

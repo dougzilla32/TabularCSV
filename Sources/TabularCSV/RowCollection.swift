@@ -29,12 +29,6 @@ protocol DataDecoder: Decoder {
     func nextStringIfPresent() -> String?
 }
 
-extension Int {
-    var atRow: String {
-        self >= 0 ? " at row \(self+1)" : ""
-    }
-}
-
 final class RowCollection<Row: TypedRow> {
     let row: Row
     let rowNumber: Int
@@ -51,17 +45,7 @@ final class RowCollection<Row: TypedRow> {
     
     func nextValue<T>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
         guard let value = nextValueIfPresent(T.self) else {
-            var codingPath = [CodingKey]()
-            var description = "No value found"
-            if let key = key {
-                codingPath.append(key)
-                description += " for key \"\(key.stringValue)\""
-            }
-            description += "\(rowNumber.atRow)."
-
-            throw CSVDecodingError.valueNotFound(
-                String.self,
-                DecodingError.Context(codingPath: codingPath, debugDescription: description))
+            throw CSVDecodingError.valueNotFound(T.self, forKey: key, rowNumber: rowNumber)
         }
         return value
     }
@@ -85,25 +69,43 @@ final class RowCollection<Row: TypedRow> {
     }
 
     func decode<T: Decodable>(_ type: T.Type, forKey key: CodingKey? = nil, decoding: DataDecoder) throws -> T {
-        return try options.decode(type, forKey: key, rowNumber: rowNumber, decoding: decoding)
+        if let parser = options.parserForType(type) {
+            let string = try decoding.nextString(forKey: key)
+            return try parse(type, string: string, forKey: key, parser: parser)
+        } else {
+            do {
+                return try T(from: decoding)
+            } catch CodableStringError.invalidFormat(let string) {
+                throw CSVDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
+            }
+        }
     }
 
     func decodeIfPresent<T: Decodable>(_ type: T.Type, decoding: DataDecoder) throws -> T? {
-        return try options.decodeIfPresent(type, rowNumber: rowNumber, decoding: decoding)
+        if let parser = options.parserForType(type) {
+            guard let string = decoding.nextStringIfPresent(), !string.isEmpty else { return nil }
+            return try parse(type, string: string, parser: parser)
+        } else {
+            do {
+                return try T(from: decoding)
+            } catch CodableStringError.invalidFormat(let string) {
+                throw CSVDecodingError.dataCorrupted(string: string, rowNumber: rowNumber)
+            }
+        }
+    }
+    
+    
+    private func parse<T>(_ type: T.Type, string: String, forKey key: CodingKey? = nil, parser: ((String) -> Any)) throws -> T {
+        guard let value = parser(string) as? T else {
+            throw CSVDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
+        }
+        return value
     }
     
     func decode<T: LosslessStringConvertible>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
-        guard let value = try decodeIfPresent(type) else {
-            var codingPath = [CodingKey]()
-            var description = "Cannot decode value"
-            if let key = key {
-                codingPath.append(key)
-                description += " for key \"\(key.stringValue)\""
-            }
-            description += "\(rowNumber.atRow)."
-
-            throw CSVDecodingError.dataCorrupted(
-                DecodingError.Context(codingPath: codingPath, debugDescription: description))
+        let string = try nextString()
+        guard let value = T(string) else {
+            throw CSVDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
         }
         return value
     }
@@ -112,6 +114,9 @@ final class RowCollection<Row: TypedRow> {
         guard let string = nextStringIfPresent(), !string.isEmpty else {
             return nil
         }
-        return T(string)
+        guard let value = T(string) else {
+            throw CSVDecodingError.dataCorrupted(string: string, rowNumber: rowNumber)
+        }
+        return value
     }
 }

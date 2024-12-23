@@ -113,9 +113,7 @@ fileprivate struct StringUnkeyedDecoding: UnkeyedDecodingContainer {
 
     private func checkEnd() throws {
         if isAtEnd {
-            throw CSVDecodingError.dataCorrupted(
-                DecodingError.Context(codingPath: [],
-                                      debugDescription: "Unkeyed container is at end\(decoding.data.rowNumber.atRow)."))
+            throw CSVDecodingError.isAtEnd(rowNumber: decoding.data.rowNumber)
         }
     }
     
