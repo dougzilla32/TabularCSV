@@ -71,7 +71,7 @@ public struct CSVDecodingError: Error, CustomStringConvertible {
     }
     
     static func isAtEnd(rowNumber: Int) -> CSVDecodingError {
-        CSVDecodingError.dataCorrupted(context(description: "Unkeyed container is at end", forKey: nil, rowNumber: rowNumber))
+        CSVDecodingError.dataCorrupted(context(description: "Decoding container is at end", forKey: nil, rowNumber: rowNumber))
     }
     
     private static func context(description: String, forKey key: CodingKey?, rowNumber: Int) -> DecodingError.Context {

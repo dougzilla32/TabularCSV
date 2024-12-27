@@ -263,19 +263,29 @@ fileprivate struct TypeUnkeyedDecoding: UnkeyedDecodingContainer {
 
 fileprivate struct TypeSingleValueDecoding: SingleValueDecodingContainer {
     private let decoding: TypeDecoding
+    private let index: Int
     var codingPath: [CodingKey] = []
 
-    init(decoding: TypeDecoding) { self.decoding = decoding }
+    init(decoding: TypeDecoding) {
+        self.decoding = decoding
+        self.index = decoding.types.data.currentIndex
+    }
 
     var types: DataTypes { decoding.types }
 
     private func addType<T: CSVInitializable>(_ type: T.Type) throws -> T {
+        guard self.index == types.data.currentIndex else {
+            throw CSVDecodingError.isAtEnd(rowNumber: types.data.rowNumber)
+        }
         types.csvTypes.append(type.csvType)
         _ = try types.data.nextString()
         return T()
     }
     
     private func addStringType<T: CSVInitializable>(_ type: T.Type) throws -> String {
+        guard self.index == types.data.currentIndex else {
+            throw CSVDecodingError.isAtEnd(rowNumber: types.data.rowNumber)
+        }
         types.csvTypes.append(type.csvType)
         return try types.data.nextString()
     }

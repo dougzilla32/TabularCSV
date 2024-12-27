@@ -191,12 +191,19 @@ fileprivate struct DataFrameUnkeyedDecoding: UnkeyedDecodingContainer {
 
 fileprivate struct DataFrameSingleValueDecoding: SingleValueDecodingContainer {
     private let decoding: DataFrameDecoding
+    private let index: Int
     var codingPath: [CodingKey] = []
 
-    init(decoding: DataFrameDecoding) { self.decoding = decoding }
+    init(decoding: DataFrameDecoding) {
+        self.decoding = decoding
+        self.index = decoding.data.currentIndex
+    }
     
     private func nextValue<T: LosslessStringConvertible>(_ type: T.Type) throws -> T {
-        try decoding.data.nextValue(type)
+        guard self.index == decoding.data.currentIndex else {
+            throw CSVDecodingError.isAtEnd(rowNumber: decoding.data.rowNumber)
+        }
+        return try decoding.data.nextValue(type)
     }
 
     func decodeNil() -> Bool { decoding.data.nextValueIfPresent(String.self) == "nil" }

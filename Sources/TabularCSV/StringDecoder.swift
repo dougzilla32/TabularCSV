@@ -178,12 +178,19 @@ fileprivate struct StringUnkeyedDecoding: UnkeyedDecodingContainer {
 
 fileprivate struct StringSingleValueDecoding: SingleValueDecodingContainer {
     private let decoding: StringDecoding
+    private let index: Int
     var codingPath: [CodingKey] = []
 
-    init(decoding: StringDecoding) { self.decoding = decoding }
+    init(decoding: StringDecoding) {
+        self.decoding = decoding
+        self.index = decoding.data.currentIndex
+    }
 
     private func decodeNextValue<T: LosslessStringConvertible>(_ type: T.Type) throws -> T {
-        try decoding.data.decode(type)
+        guard self.index == decoding.data.currentIndex else {
+            throw CSVDecodingError.isAtEnd(rowNumber: decoding.data.rowNumber)
+        }
+        return try decoding.data.decode(type)
     }
 
     func decodeNil() -> Bool { decoding.data.nextValueIfPresent(String.self) == "nil" }

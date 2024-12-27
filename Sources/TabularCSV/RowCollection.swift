@@ -83,6 +83,18 @@ final class RowCollection<Row: TypedRow> {
                 return try T(from: decoding)
             } catch CodableStringError.invalidFormat(let string) {
                 throw CSVDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
+            } catch let csvError as CSVDecodingError {
+                switch csvError.error {
+                case .dataCorrupted(let context):
+                    var codingPath: [CodingKey] = []
+                    if let key = key { codingPath.append(key) }
+                    throw CSVDecodingError.dataCorrupted(
+                        DecodingError.Context(
+                            codingPath: codingPath,
+                            debugDescription: context.debugDescription))
+                default:
+                    throw csvError
+                }
             }
         }
     }
