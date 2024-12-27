@@ -10,7 +10,7 @@ import Foundation
 import TabularData
 
 public struct ReadingOptions {
-    private var csvReadingOptions: CSVReadingOptions
+    var csvReadingOptions: CSVReadingOptions
     
     /// The set of strings that stores acceptable spellings for empty values.
     ///

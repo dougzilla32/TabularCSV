@@ -19,8 +19,9 @@ public struct DataFrameDecoder {
         dataFrame: DataFrame,
         rowMapping: [Int?]? = nil) throws -> [T]
     {
-        try dataFrame.rows.enumerated().map { index, row in
-            try decode(T.self, row: row, rowNumber: index+1, rowMapping: rowMapping)
+        let headerOffset = (options.csvReadingOptions.hasHeaderRow ? 1 : 0)
+        return try dataFrame.rows.enumerated().map { index, row in
+            try decode(T.self, row: row, rowNumber: index+headerOffset, rowMapping: rowMapping)
         }
     }
     
@@ -51,6 +52,7 @@ struct DataFrameDecoding: DataDecoder {
 
     func nextString(forKey key: CodingKey?) throws -> String { try data.nextString(forKey: key) }
     func nextStringIfPresent() -> String? { data.nextStringIfPresent() }
+    func peekStringIfPresent() -> String? { data.peekStringIfPresent() }
 }
 
 fileprivate struct DataFrameKeyedDecoding<Key: CodingKey>: KeyedDecodingContainerProtocol {

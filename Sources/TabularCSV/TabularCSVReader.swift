@@ -86,11 +86,6 @@ public struct TabularCSVReader {
     //        }
     //    }
     
-    private enum RowType {
-        case decodable(Decodable.Type)
-        case KeyedDecodable(any KeyedDecodable.Type)
-    }
-    
     private enum DataSource {
         case file(String)
         case data(Data)
@@ -125,7 +120,7 @@ public struct TabularCSVReader {
     }
     
     private func read<T: Decodable>(_ type: T.Type, header: [String]?, dataSource: DataSource) throws -> [T] {
-        let columnTypes = try determineColumnTypes(.decodable(type), header: header, dataSource: dataSource)
+        let columnTypes = try determineColumnTypes(type, header: header, dataSource: dataSource)
         let hasHeaderRow = options.hasHeaderRow(header != nil)
         let dataFrame: DataFrame
 
@@ -151,7 +146,7 @@ public struct TabularCSVReader {
         return rows
     }
     
-    private func determineColumnTypes(_ rowType: RowType, header: [String]?, dataSource: DataSource) throws -> [String: CSVType] {
+    private func determineColumnTypes<T: Decodable>(_ type: T.Type, header: [String]?, dataSource: DataSource) throws -> [String: CSVType] {
         let numLinesToRead = header != nil ? 2 : 1
         let firstLittleBit: (data: Data, lines: [String])
         switch dataSource {
@@ -186,13 +181,8 @@ public struct TabularCSVReader {
         }
 
         let typeDecoder = TypeDecoder(options: options)
-        switch rowType {
-        case .decodable(let type):
-            try typeDecoder.decode(type, from: row, rowNumber: 1)
-        case .KeyedDecodable(let type):
-            try typeDecoder.decode(type, from: row, rowNumber: 1)
-        }
-        
+        try typeDecoder.decode(type, from: row, rowNumber: 1)
+
         var columnTypes = [String: CSVType]()
         zip(headerNames, typeDecoder.types.csvTypes).forEach {
             columnTypes[$0] = $1

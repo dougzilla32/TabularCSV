@@ -39,6 +39,7 @@ struct StringDecoding: DataDecoder {
 
     func nextString(forKey key: (any CodingKey)?) throws -> String { try data.nextString(forKey: key) }
     func nextStringIfPresent() -> String? { data.nextStringIfPresent() }
+    func peekStringIfPresent() -> String? { data.peekStringIfPresent() }
 }
 
 fileprivate struct StringKeyedDecoding<Key: CodingKey>: KeyedDecodingContainerProtocol {

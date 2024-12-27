@@ -27,6 +27,8 @@ protocol DataDecoder: Decoder {
     func nextString(forKey key: CodingKey?) throws -> String
 
     func nextStringIfPresent() -> String?
+    
+    func peekStringIfPresent() -> String?
 }
 
 final class RowCollection<Row: TypedRow> {
@@ -50,7 +52,7 @@ final class RowCollection<Row: TypedRow> {
         return value
     }
     
-    func nextValueIfPresent<T>(_ type: T.Type) -> T? {
+    func nextValueIfPresent<T>(_ type: T.Type, isPeek: Bool = false) -> T? {
         guard currentIndex < row.count else { return nil }
         var value = row[rowMapping?[currentIndex] ?? currentIndex, type]
         if type == String.self, value == nil {
@@ -61,11 +63,15 @@ final class RowCollection<Row: TypedRow> {
     }
 
     func nextString(forKey key: CodingKey? = nil) throws -> String {
-        return try nextValue(String.self, forKey: key)
+        try nextValue(String.self, forKey: key)
     }
 
     func nextStringIfPresent() -> String? {
-        return nextValueIfPresent(String.self)
+        nextValueIfPresent(String.self)
+    }
+    
+    func peekStringIfPresent() -> String? {
+        nextValueIfPresent(String.self, isPeek: true)
     }
 
     func decode<T: Decodable>(_ type: T.Type, forKey key: CodingKey? = nil, decoding: DataDecoder) throws -> T {
@@ -86,6 +92,7 @@ final class RowCollection<Row: TypedRow> {
             guard let string = decoding.nextStringIfPresent(), !string.isEmpty else { return nil }
             return try parse(type, string: string, parser: parser)
         } else {
+            guard let string = decoding.peekStringIfPresent(), !string.isEmpty else { return nil }
             do {
                 return try T(from: decoding)
             } catch CodableStringError.invalidFormat(let string) {
@@ -111,9 +118,7 @@ final class RowCollection<Row: TypedRow> {
     }
 
     func decodeIfPresent<T: LosslessStringConvertible>(_ type: T.Type) throws -> T? {
-        guard let string = nextStringIfPresent(), !string.isEmpty else {
-            return nil
-        }
+        guard let string = nextStringIfPresent(), !string.isEmpty else { return nil }
         guard let value = T(string) else {
             throw CSVDecodingError.dataCorrupted(string: string, rowNumber: rowNumber)
         }

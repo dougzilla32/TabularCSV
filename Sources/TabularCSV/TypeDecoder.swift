@@ -72,6 +72,7 @@ fileprivate struct TypeDecoding: DataDecoder {
     
     func nextString(forKey key: (any CodingKey)?) throws -> String { try types.data.nextString(forKey: key) }
     func nextStringIfPresent() -> String? { types.data.nextStringIfPresent() }
+    func peekStringIfPresent() -> String? { types.data.peekStringIfPresent() }
 }
 
 fileprivate struct TypeKeyedDecoding<Key: CodingKey>: KeyedDecodingContainerProtocol {
@@ -116,7 +117,6 @@ fileprivate struct TypeKeyedDecoding<Key: CodingKey>: KeyedDecodingContainerProt
     func decode(_ type: UInt64.Type,  forKey key: Key) throws -> UInt64  { try addType(type, forKey: key) }
     
     func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T {
-        types.csvTypes.append(.string)
         return try types.data.decode(type, forKey: key, decoding: decoding)
     }
 
@@ -211,7 +211,6 @@ fileprivate struct TypeUnkeyedDecoding: UnkeyedDecodingContainer {
     mutating func decode(_ type: UInt64.Type ) throws -> UInt64  { try addType(type) }
 
     func decode<T: Decodable>(_ type: T.Type) throws -> T {
-        types.csvTypes.append(.string)
         return try types.data.decode(type, decoding: decoding)
     }
 
@@ -302,7 +301,6 @@ fileprivate struct TypeSingleValueDecoding: SingleValueDecodingContainer {
     func decode(_ type: UInt64.Type ) throws -> UInt64  { try addType(type) }
     
     func decode<T: Decodable>(_ type: T.Type) throws -> T {
-        types.csvTypes.append(.string)
         return try types.data.decode(type, decoding: decoding)
     }
 }
