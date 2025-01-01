@@ -103,23 +103,23 @@ public struct TabularCSVReader {
         self.init(options: opts)
     }
     
-    public func read<T: Decodable>(_ type: T.Type, header: [String]?, fromPath filePath: String) throws -> [T] {
+    public func read<T: Decodable>(_ type: T.Type, header: [String]?, fromPath filePath: String) throws -> T where T: Collection {
         try read(type, header: header, dataSource: DataSource.file(filePath))
     }
     
-    public func read<T: Decodable>(_ type: T.Type, header: [String]?, csvData: Data) throws -> [T] {
+    public func read<T: Decodable>(_ type: T.Type, header: [String]?, csvData: Data) throws -> T where T: Collection {
         try read(type, header: header, dataSource: DataSource.data(csvData))
     }
     
-    public func read<T: KeyedDecodable>(_ type: T.Type, hasHeaderRow: Bool = true, fromPath filePath: String) throws -> [T] {
+    public func read<T: Decodable>(_ type: T.Type, hasHeaderRow: Bool = true, fromPath filePath: String) throws -> T where T: MutableCollection, T.Element: KeyedDecodable {
         return try read(type, hasHeaderRow: hasHeaderRow, dataSource: DataSource.file(filePath))
     }
     
-    public func read<T: KeyedDecodable>(_ type: T.Type, hasHeaderRow: Bool = true, csvData: Data) throws -> [T] {
+    public func read<T: Decodable>(_ type: T.Type, hasHeaderRow: Bool = true, csvData: Data) throws -> T where T: MutableCollection, T.Element: KeyedDecodable {
         return try read(type, hasHeaderRow: hasHeaderRow, dataSource: DataSource.data(csvData))
     }
     
-    private func read<T: Decodable>(_ type: T.Type, header: [String]?, dataSource: DataSource) throws -> [T] {
+    private func read<T: Decodable>(_ type: T.Type, header: [String]?, dataSource: DataSource) throws -> T where T: Collection {
         let columnTypes = try determineColumnTypes(type, header: header, dataSource: dataSource)
         let hasHeaderRow = options.hasHeaderRow(header != nil)
         let dataFrame: DataFrame
@@ -132,21 +132,23 @@ public struct TabularCSVReader {
         }
 
         let rowMapping: [Int?]? = try createHeaderIndexMap(expectedHeader: header, csvHeader: dataFrame.columns.map(\.name))
-        let dataFrameDecoder = DataFrameDecoder(options: options)
-        return try dataFrameDecoder.decode(type, dataFrame: dataFrame, rowMapping: rowMapping)
+        let dataFrameDecoder = TabularDecoder<DataFrame.Rows>(options: options)
+        return try dataFrameDecoder.decode(type, rows: dataFrame.rows, rowMapping: rowMapping)
     }
     
-    private func read<T: KeyedDecodable>(_ type: T.Type, hasHeaderRow: Bool, dataSource: DataSource) throws -> [T] {
-        let header: [String]? = hasHeaderRow ? T.CodingKeysType.allCases.map { $0.rawValue } : nil
+    private func read<T: Decodable>(_ type: T.Type, hasHeaderRow: Bool, dataSource: DataSource) throws -> T where T: MutableCollection, T.Element: KeyedDecodable {
+        let header: [String]? = hasHeaderRow ? T.Element.CodingKeysType.allCases.map { $0.rawValue } : nil
         var rows = try read(type, header: header, dataSource: dataSource)
+        var index = rows.startIndex
         for r in 0..<rows.count {
-            rows[r].row = r+1
-            rows[r].postInit()
+            rows[index].row = r + 1
+            rows[index].postInit()
+            index = rows.index(after: index)
         }
         return rows
     }
     
-    private func determineColumnTypes<T: Decodable>(_ type: T.Type, header: [String]?, dataSource: DataSource) throws -> [String: CSVType] {
+    private func determineColumnTypes<T: Decodable & Collection>(_ type: T.Type, header: [String]?, dataSource: DataSource) throws -> [String: CSVType] {
         let numLinesToRead = header != nil ? 2 : 1
         let firstLittleBit: (data: Data, lines: [String])
         switch dataSource {
@@ -181,7 +183,7 @@ public struct TabularCSVReader {
         }
 
         let typeDecoder = TypeDecoder(options: options)
-        try typeDecoder.decode(type, from: row, rowNumber: 1)
+        try typeDecoder.decode(type, from: row)
 
         var columnTypes = [String: CSVType]()
         zip(headerNames, typeDecoder.types.csvTypes).forEach {

@@ -1,6 +1,7 @@
 import Testing
 import TabularCSV
 import TabularData
+import CodableCSV
 
 struct Person: Codable {
     let name: String
@@ -17,7 +18,7 @@ struct PersonWithoutHeight: Codable {
     @Nationality var nationality: String
 }
 
-struct PersonRow: KeyedCodable {
+struct PersonKeyed: KeyedCodable {
     typealias CodingKeysType = CodingKeys
     
     let name: String
@@ -64,33 +65,34 @@ let PersonCSV = PersonCSVHeader + PersonCSVRows
 
 @Test func testPerson() async throws {
     do {
-        let rows = try TabularCSVReader().read(Person.self, header: PersonHeader, csvData: PersonCSV.data(using: .utf8)!)
+        let rows = try TabularCSVReader().read([Person].self, header: PersonHeader, csvData: PersonCSV.data(using: .utf8)!)
+        print(rows.count)
         let string = String(data: try TabularCSVWriter().csvRepresentation(rows, header: PersonHeader), encoding: .utf8)!
         #expect(string == PersonCSV)
     }
     
     do {
-        let rows = try TabularCSVReader().read(PersonRow.self, csvData: PersonCSV.data(using: .utf8)!)
+        let rows = try TabularCSVReader().read([PersonKeyed].self, csvData: PersonCSV.data(using: .utf8)!)
         let string = String(data: try TabularCSVWriter().csvRepresentation(rows), encoding: .utf8)!
         #expect(string == PersonCSV)
     }
 }
 
 @Test func testPersonWithoutHeight() async throws {
-    let rows = try TabularCSVReader().read(PersonWithoutHeight.self, header: PersonHeader, csvData: PersonCSV.data(using: .utf8)!)
+    let rows = try TabularCSVReader().read([PersonWithoutHeight].self, header: PersonHeader, csvData: PersonCSV.data(using: .utf8)!)
     let string = String(data: try TabularCSVWriter().csvRepresentation(rows, header: PersonHeader), encoding: .utf8)!
     #expect(string == PersonCSV)
 }
 
 @Test func testPersonNoHeader() async throws {
-    let rows = try TabularCSVReader().read(Person.self, header: nil, csvData: PersonCSVRows.data(using: .utf8)!)
+    let rows = try TabularCSVReader().read([Person].self, header: nil, csvData: PersonCSVRows.data(using: .utf8)!)
     let string = String(data: try TabularCSVWriter().csvRepresentation(rows, header: nil), encoding: .utf8)!
     print(string)
     #expect(string == PersonCSVRows)
 }
 
 @Test func testKeyedCodablePerson() async throws {
-    let rows = try TabularCSVReader().read(PersonRow.self, csvData: PersonCSV.data(using: .utf8)!)
+    let rows = try TabularCSVReader().read([PersonKeyed].self, csvData: PersonCSV.data(using: .utf8)!)
     let string = String(data: try TabularCSVWriter().csvRepresentation(rows), encoding: .utf8)!
     #expect(string == PersonCSV)
 }
@@ -107,4 +109,73 @@ let PersonCSV = PersonCSVHeader + PersonCSVRows
     let data = try DataFrame(columns: columns).csvRepresentation(options: CSVWritingOptions(includesHeader: true))
     let string = String(data: data, encoding: .utf8)!
     print("STRING \(string)")
+}
+
+@Test func testCodableCSV() async throws {
+    let rows = try CSVDecoder().decode([Person].self, from: PersonCSV.data(using: .utf8)!)
+}
+
+
+class Pet: Codable {
+    let name: String
+    let age: Int
+    @YesNo var friendly: Bool
+}
+
+class Cat: Pet {
+    let color: String
+
+    required init(from decoder: any Decoder) throws {
+        self.color = try decoder.singleValueContainer().decode(String.self)
+        try super.init(from: decoder)
+    }
+}
+
+class PetKeyed: KeyedCodable {
+    typealias CodingKeysType = CodingKeys
+    
+    let name: String
+    let age: Int
+    @YesNo var friendly: Bool
+    
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case name = "Name"
+        case age = "Age"
+        case friendly = "Friendly"
+    }
+}
+
+class CatKeyed: Pet, KeyedCodable {
+    typealias CodingKeysType = CodingKeys
+    
+    let color: String
+    
+    required init(from decoder: any Decoder) throws {
+        self.color = try decoder.singleValueContainer().decode(String.self)
+        try super.init(from: decoder)
+    }
+    
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case color = "Color"
+    }
+}
+
+let CatHeader = ["Color", "Name", "Age", "Friendly"]
+let CatCSVHeader = "Color,Name,Age,Friendly\n"
+let CatCSVRows = "red,Alice,2,yes\nwhite,Bob,3,no\nblack,Charlie,5,yes\n"
+let CatCSV = CatCSVHeader + CatCSVRows
+
+@Test func testCat() async throws {
+    do {
+        let rows = try TabularCSVReader().read([Cat].self, header: CatHeader, csvData: CatCSV.data(using: .utf8)!)
+        print(rows.count)
+        let string = String(data: try TabularCSVWriter().csvRepresentation(rows, header: CatHeader), encoding: .utf8)!
+        #expect(string == CatCSV)
+    }
+    
+    do {
+        let rows = try TabularCSVReader().read([CatKeyed].self, csvData: CatCSV.data(using: .utf8)!)
+        let string = String(data: try TabularCSVWriter().csvRepresentation(rows), encoding: .utf8)!
+        #expect(string == CatCSV)
+    }
 }

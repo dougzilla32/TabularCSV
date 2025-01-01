@@ -71,10 +71,18 @@ public struct CSVDecodingError: Error, CustomStringConvertible {
     }
     
     static func isAtEnd(rowNumber: Int) -> CSVDecodingError {
-        CSVDecodingError.dataCorrupted(context(description: "Decoding container is at end", forKey: nil, rowNumber: rowNumber))
+        CSVDecodingError.dataCorrupted(context(description: "No more rows available", rowNumber: rowNumber))
     }
     
-    private static func context(description: String, forKey key: CodingKey?, rowNumber: Int) -> DecodingError.Context {
+    static func nestedContainer(forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.dataCorrupted(context(description: "Cannot create nested container", forKey: key, rowNumber: rowNumber))
+    }
+    
+    static func unkeyedContainer(rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.dataCorrupted(context(description: "Cannot create unkeyed container", rowNumber: rowNumber))
+    }
+    
+    private static func context(description: String, forKey key: CodingKey? = nil, rowNumber: Int) -> DecodingError.Context {
         var codingPath = [CodingKey]()
         var description = description
         if let key = key {
