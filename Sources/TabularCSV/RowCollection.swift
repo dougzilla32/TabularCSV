@@ -9,20 +9,21 @@
 import Foundation
 import TabularData
 
-protocol TypedRow {
-    subscript<T>(position: Int, type: T.Type) -> T? { get }
+public protocol TypedRow {
+    subscript<T: LosslessStringConvertible>(position: Int, type: T.Type) -> T? { get }
     var count: Int { get }
 }
 
-protocol TypedRows: Collection where Element: TypedRow { }
+public protocol TypedRows: Collection where Element: TypedRow { }
 
 extension DataFrame.Row: TypedRow { }
 
 extension DataFrame.Rows: TypedRows { }
 
 extension Array: TypedRow where Element == String? {
-    subscript<T>(position: Int, type: T.Type) -> T? {
-        self[position] as? T
+    public subscript<T: LosslessStringConvertible>(position: Int, type: T.Type) -> T? {
+        guard let string = self[position] else { return nil }
+        return T(string)
     }
 }
 
@@ -37,16 +38,20 @@ final class RowCollection<Rows: TypedRows> {
     private(set) var rowNumber: Int
     private(set) var currentRowIndex: Int
     private var currentColumnIndex: Int
+    private(set) var csvTypes: [CSVType]?
 
-    init(rows: Rows, rowMapping: [Int?]?, options: ReadingOptions) {
+    init(rows: Rows, rowMapping: [Int?]?, withTypes: Bool, options: ReadingOptions) {
         self.rowCount = rows.count
         self.rowsIterator = rows.makeIterator()
         self.rowMapping = rowMapping
         self.options = options
         self.currentRow = nil
-        self.rowNumber = (options.csvReadingOptions.hasHeaderRow ? 1 : 0)
+        self.rowNumber = (options.csvReadingOptions.hasHeaderRow && !withTypes) ? 1 : 0
         self.currentRowIndex = 0
         self.currentColumnIndex = -1
+        if withTypes {
+            csvTypes = []
+        }
     }
     
     func nextRow() throws {
@@ -65,14 +70,14 @@ final class RowCollection<Rows: TypedRows> {
         return true
     }
     
-    func nextValue<T>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
+    func nextValue<T: LosslessStringConvertible & CSVPrimitiveType>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
         guard let value = nextValueIfPresent(T.self) else {
             throw CSVDecodingError.valueNotFound(T.self, forKey: key, rowNumber: rowNumber)
         }
         return value
     }
     
-    func nextValueIfPresent<T>(_ type: T.Type, isPeek: Bool = false) -> T? {
+    func nextValueIfPresent<T: LosslessStringConvertible & CSVPrimitiveType>(_ type: T.Type, isPeek: Bool = false) -> T? {
         guard let row = currentRow,
             currentColumnIndex < row.count
         else {
@@ -83,6 +88,7 @@ final class RowCollection<Rows: TypedRows> {
             value = "" as? T
         }
         if !isPeek {
+            csvTypes?.append(type.csvType)
             currentColumnIndex += 1
         }
         return value
@@ -142,22 +148,6 @@ final class RowCollection<Rows: TypedRows> {
     private func parse<T>(_ type: T.Type, string: String, forKey key: CodingKey? = nil, parser: ((String) -> Any)) throws -> T {
         guard let value = parser(string) as? T else {
             throw CSVDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
-        }
-        return value
-    }
-    
-    func decode<T: LosslessStringConvertible>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
-        let string = try nextString()
-        guard let value = T(string) else {
-            throw CSVDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
-        }
-        return value
-    }
-    
-    func decodeIfPresent<T: LosslessStringConvertible>(_ type: T.Type) throws -> T? {
-        guard let string = nextStringIfPresent(), !string.isEmpty else { return nil }
-        guard let value = T(string) else {
-            throw CSVDecodingError.dataCorrupted(string: string, rowNumber: rowNumber)
         }
         return value
     }

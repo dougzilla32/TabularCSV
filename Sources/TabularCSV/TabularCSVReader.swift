@@ -132,7 +132,7 @@ public struct TabularCSVReader {
         }
 
         let rowMapping: [Int?]? = try createHeaderIndexMap(expectedHeader: header, csvHeader: dataFrame.columns.map(\.name))
-        let dataFrameDecoder = TabularDecoder<DataFrame.Rows>(options: options)
+        let dataFrameDecoder = DataFrameDecoder(options: options)
         return try dataFrameDecoder.decode(type, rows: dataFrame.rows, rowMapping: rowMapping)
     }
     
@@ -182,11 +182,11 @@ public struct TabularCSVReader {
             }
         }
 
-        let typeDecoder = TypeDecoder(options: options)
-        try typeDecoder.decode(type, from: row)
+        let typeDecoder = StringDecoder(options: options)
+        let result = try typeDecoder.decodeWithTypes(type, rows: [row])
 
         var columnTypes = [String: CSVType]()
-        zip(headerNames, typeDecoder.types.csvTypes).forEach {
+        zip(headerNames, result.csvTypes).forEach {
             columnTypes[$0] = $1
         }
         return columnTypes

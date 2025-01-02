@@ -8,11 +8,33 @@
 
 import TabularData
 
-typealias DataFrameDecoder = TabularDecoder<DataFrame.Rows>
+public typealias DataFrameDecoder = TabularDecoder<DataFrame.Rows>
 
-typealias StringDecoder = TabularDecoder<[[String?]]>
+public typealias StringDecoder = TabularDecoder<[[String?]]>
 
-struct TabularDecoder<Rows: TypedRows> {
+protocol CSVPrimitiveType {
+    static var csvType: CSVType { get }
+}
+
+extension Bool:   CSVPrimitiveType { static var csvType: CSVType { .boolean } }
+extension String: CSVPrimitiveType { static var csvType: CSVType { .string  } }
+extension Double: CSVPrimitiveType { static var csvType: CSVType { .double  } }
+extension Float:  CSVPrimitiveType { static var csvType: CSVType { .float   } }
+extension FixedWidthInteger where Self: CSVPrimitiveType { static var csvType: CSVType { .integer } }
+
+extension Int:    CSVPrimitiveType {}
+extension Int8:   CSVPrimitiveType {}
+extension Int16:  CSVPrimitiveType {}
+extension Int32:  CSVPrimitiveType {}
+extension Int64:  CSVPrimitiveType {}
+extension UInt:   CSVPrimitiveType {}
+extension UInt8:  CSVPrimitiveType {}
+extension UInt16: CSVPrimitiveType {}
+extension UInt32: CSVPrimitiveType {}
+extension UInt64: CSVPrimitiveType {}
+
+
+public struct TabularDecoder<Rows: TypedRows> {
     private let options: ReadingOptions
     
     public init(options: ReadingOptions) { self.options = options }
@@ -22,7 +44,17 @@ struct TabularDecoder<Rows: TypedRows> {
         rows: Rows,
         rowMapping: [Int?]? = nil) throws -> T
     {
-        try T(from: TabularRowsDecoder(rows: rows, rowMapping: rowMapping, options: options))
+        try T(from: TabularRowsDecoder(rows: rows, rowMapping: rowMapping, withTypes: false, options: options))
+    }
+
+    func decodeWithTypes<T: Decodable & Collection>(
+        _ type: T.Type,
+        rows: Rows,
+        rowMapping: [Int?]? = nil) throws -> (value: T, csvTypes: [CSVType])
+    {
+        let decoder = TabularRowsDecoder(rows: rows, rowMapping: rowMapping, withTypes: true, options: options)
+        let value = try T(from: decoder)
+        return (value: value, csvTypes: decoder.data.csvTypes ?? [])
     }
 }
 
@@ -31,8 +63,8 @@ struct TabularRowsDecoder<Rows: TypedRows>: Decoder {
     var codingPath: [CodingKey] = []
     let userInfo: [CodingUserInfoKey: Any] = [:]
 
-    init(rows: Rows, rowMapping: [Int?]?, options: ReadingOptions) {
-        self.data = RowCollection(rows: rows, rowMapping: rowMapping, options: options)
+    init(rows: Rows, rowMapping: [Int?]?, withTypes: Bool, options: ReadingOptions) {
+        self.data = RowCollection(rows: rows, rowMapping: rowMapping, withTypes: withTypes, options: options)
     }
     
     func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedDecodingContainer<Key> {
@@ -135,7 +167,7 @@ fileprivate struct TabularUnkeyedDecoding<Rows: TypedRows>: UnkeyedDecodingConta
         }
     }
     
-    private func nextValue<T: LosslessStringConvertible>(_ type: T.Type) throws -> T {
+    private func nextValue<T: LosslessStringConvertible & CSVPrimitiveType>(_ type: T.Type) throws -> T {
         try data.nextRow()
         return try data.nextValue(type)
     }
@@ -165,7 +197,7 @@ fileprivate struct TabularUnkeyedDecoding<Rows: TypedRows>: UnkeyedDecodingConta
         return try data.decode(type, decoder: decoder)
     }
 
-    private func nextValueIfPresent<T: LosslessStringConvertible>(_ type: T.Type) -> T? {
+    private func nextValueIfPresent<T: LosslessStringConvertible & CSVPrimitiveType>(_ type: T.Type) -> T? {
         guard data.nextRowIfPresent() else { return nil }
         return data.nextValueIfPresent(type)
     }
@@ -216,7 +248,7 @@ fileprivate struct TabularSingleValueDecoding<Rows: TypedRows>: SingleValueDecod
     
     var data: RowCollection<Rows> { decoder.data }
     
-    private func nextValue<T: LosslessStringConvertible>(_ type: T.Type) throws -> T {
+    private func nextValue<T: LosslessStringConvertible & CSVPrimitiveType>(_ type: T.Type) throws -> T {
         try data.checkValueIndex(index)
         return try data.nextValue(type)
     }

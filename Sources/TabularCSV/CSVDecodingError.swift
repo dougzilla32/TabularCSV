@@ -94,6 +94,6 @@ public struct CSVDecodingError: Error, CustomStringConvertible {
     }
     
     private static func atRow(_ rowNumber: Int) -> String {
-        rowNumber >= 0 ? " at row \(rowNumber+1)" : ""
+        rowNumber >= 0 ? " at row \(rowNumber)" : ""
     }
 }
