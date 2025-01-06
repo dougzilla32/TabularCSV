@@ -1,6 +1,6 @@
 //
 //  WritingOptions.swift
-//  SweepMap
+//  TabularCSV
 //
 //  Created by Doug on 12/11/24.
 //  Copyright © 2024 Doug. All rights reserved.
@@ -112,23 +112,7 @@ public struct WritingOptions {
         return (writingOptions: options, csvWritingOptions: options.csvWritingOptions)
     }
     
-    func encode<T: Encodable>(_ type: T.Type, value: T, rowNumber: Int, encoding: Encoder) throws {
-        if let formatter = formatterForType(type) {
-            try formatter(value).encode(to: encoding)
-        } else {
-            try value.encode(to: encoding)
-        }
-    }
-
-    func encodeIfPresent<T: Encodable>(_ type: T.Type, value: T, rowNumber: Int, encoding: Encoder) throws {
-        if let formatter = formatterForType(type) {
-            try formatter(value).encode(to: encoding)
-        } else {
-            try value.encode(to: encoding)
-        }
-    }
-
-    private func formatterForType<T>(_ type: T.Type) -> ((T) -> String)? {
+    func formatterForType<T>(_ type: T.Type) -> ((T) -> String)? {
         switch type {
         case is Data.Type:
             guard let dataFormatter = dataFormatter else { return nil }

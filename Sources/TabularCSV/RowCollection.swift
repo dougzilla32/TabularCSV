@@ -1,6 +1,6 @@
 //
 //  RowCollection.swift
-//  SweepMap
+//  TabularCSV
 //
 //  Created by Doug on 12/16/24.
 //  Copyright © 2024 Doug. All rights reserved.
@@ -9,27 +9,36 @@
 import Foundation
 import TabularData
 
-public protocol TypedRow {
-    subscript<T: LosslessStringConvertible>(position: Int, type: T.Type) -> T? { get }
+public protocol DataRow {
+    subscript<T: LosslessStringConvertible>(position: Int, type: T.Type, options: ReadingOptions) -> T? { get }
     var count: Int { get }
 }
 
-public protocol TypedRows: Collection where Element: TypedRow { }
+public protocol DataRows: Collection where Element: DataRow { }
 
-extension DataFrame.Row: TypedRow { }
+extension DataFrame.Row: DataRow {
+    public subscript<T: LosslessStringConvertible>(position: Int, type: T.Type, options: ReadingOptions) -> T? {
+        self[position, type]
+    }
+}
 
-extension DataFrame.Rows: TypedRows { }
+extension DataFrame.Rows: DataRows { }
 
-extension Array: TypedRow where Element == String? {
-    public subscript<T: LosslessStringConvertible>(position: Int, type: T.Type) -> T? {
+extension Array: DataRow where Element == String? {
+    public subscript<T: LosslessStringConvertible>(position: Int, type: T.Type, options: ReadingOptions) -> T? {
         guard let string = self[position] else { return nil }
+        if options.nilEncodings.contains(string) { return nil }
+        if type == Bool.self {
+            if options.trueEncodings.contains(string) { return true as? T }
+            if options.falseEncodings.contains(string) { return false as? T }
+        }
         return T(string)
     }
 }
 
-extension Array: TypedRows where Element == [String?] { }
+extension Array: DataRows where Element == [String?] { }
 
-final class RowCollection<Rows: TypedRows> {
+final class RowCollection<Rows: DataRows> {
     let rowCount: Int
     private var rowsIterator: Rows.Iterator
     private let rowMapping: [Int?]?
@@ -70,21 +79,21 @@ final class RowCollection<Rows: TypedRows> {
         return true
     }
     
-    func nextValue<T: LosslessStringConvertible & CSVPrimitiveType>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
-        guard let value = nextValueIfPresent(T.self) else {
+    func decodeNext<T: CSVPrimitive>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
+        guard let value = decodeNextIfPresent(T.self) else {
             throw CSVDecodingError.valueNotFound(T.self, forKey: key, rowNumber: rowNumber)
         }
         return value
     }
     
-    func nextValueIfPresent<T: LosslessStringConvertible & CSVPrimitiveType>(_ type: T.Type, isPeek: Bool = false) -> T? {
+    func decodeNextIfPresent<T: CSVPrimitive>(_ type: T.Type, isPeek: Bool = false) -> T? {
         guard let row = currentRow,
             currentColumnIndex < row.count
         else {
             return nil
         }
-        var value = row[rowMapping?[currentColumnIndex] ?? currentColumnIndex, type]
-        if type == String.self, value == nil {
+        var value = row[rowMapping?[currentColumnIndex] ?? currentColumnIndex, type, options]
+        if options.nilAsEmptyString, type == String.self, value == nil {
             value = "" as? T
         }
         if !isPeek {
@@ -94,21 +103,9 @@ final class RowCollection<Rows: TypedRows> {
         return value
     }
     
-    func nextString(forKey key: CodingKey? = nil) throws -> String {
-        try nextValue(String.self, forKey: key)
-    }
-    
-    func nextStringIfPresent() -> String? {
-        nextValueIfPresent(String.self)
-    }
-    
-    func peekStringIfPresent() -> String? {
-        nextValueIfPresent(String.self, isPeek: true)
-    }
-    
     func decode<T: Decodable>(_ type: T.Type, forKey key: CodingKey? = nil, decoder: Decoder) throws -> T {
         if let parser = options.parserForType(type) {
-            let string = try nextString(forKey: key)
+            let string = try decodeNext(String.self, forKey: key)
             return try parse(type, string: string, forKey: key, parser: parser)
         } else {
             do {
@@ -133,10 +130,13 @@ final class RowCollection<Rows: TypedRows> {
     
     func decodeIfPresent<T: Decodable>(_ type: T.Type, decoder: Decoder) throws -> T? {
         if let parser = options.parserForType(type) {
-            guard let string = nextStringIfPresent(), !string.isEmpty else { return nil }
+            guard let string = decodeNextIfPresent(String.self), !string.isEmpty else { return nil }
             return try parse(type, string: string, parser: parser)
         } else {
-            guard let string = peekStringIfPresent(), !string.isEmpty else { return nil }
+            guard let string = decodeNextIfPresent(String.self, isPeek: true), !string.isEmpty else {
+                _ = decodeNextIfPresent(String.self)
+                return nil
+            }
             do {
                 return try T(from: decoder)
             } catch CodableStringError.invalidFormat(let string) {

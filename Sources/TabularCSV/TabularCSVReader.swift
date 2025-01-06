@@ -1,6 +1,6 @@
 //
 //  TabularCSVReader.swift
-//  SweepMap
+//  TabularCSV
 //
 //  Created by Doug on 12/5/24.
 //  Copyright © 2024 Doug. All rights reserved.

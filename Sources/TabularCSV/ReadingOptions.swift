@@ -1,6 +1,6 @@
 //
 //  ReadingOptions.swift
-//  SweepMap
+//  TabularCSV
 //
 //  Created by Doug on 12/11/24.
 //  Copyright © 2024 Doug. All rights reserved.
@@ -93,6 +93,8 @@ public struct ReadingOptions {
     
     public var urlParser: ((String) -> URL?)?
     
+    public var nilAsEmptyString: Bool = false
+    
     public init(
         nilEncodings: Set<String>   = [ "", "#N/A", "#N/A N/A", "#NA", "N/A", "NA", "NULL", "n/a", "null" ],
         trueEncodings: Set<String>  = [ "1", "True", "TRUE", "true" ],
@@ -106,7 +108,8 @@ public struct ReadingOptions {
         escapeCharacter: Character = "\\",
         dataParser: ((String) -> Data?)? = nil,
         decimalParser: ((String) -> Decimal?)? = nil,
-        urlParser: ((String) -> URL?)? = nil
+        urlParser: ((String) -> URL?)? = nil,
+        nitAsEmptyString: Bool = false
     ) {
         csvReadingOptions = .init(
             hasHeaderRow: true,
@@ -123,6 +126,7 @@ public struct ReadingOptions {
         self.dataParser = dataParser
         self.decimalParser = decimalParser
         self.urlParser = urlParser
+        self.nilAsEmptyString = nitAsEmptyString
     }
     
     public init() { csvReadingOptions = .init() }

@@ -1,6 +1,6 @@
 //
 //  CSVDecodingError.swift
-//  SweepMap
+//  TabularCSV
 //
 //  Created by Doug on 12/10/24.
 //  Copyright © 2024 Doug. All rights reserved.
