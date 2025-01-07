@@ -103,7 +103,7 @@ final class RowCollection<Rows: DataRows> {
         return value
     }
     
-    func decode<T: Decodable>(_ type: T.Type, forKey key: CodingKey? = nil, decoder: Decoder) throws -> T {
+    func decodeNext<T: Decodable>(_ type: T.Type, forKey key: CodingKey? = nil, decoder: Decoder) throws -> T {
         if let parser = options.parserForType(type) {
             let string = try decodeNext(String.self, forKey: key)
             return try parse(type, string: string, forKey: key, parser: parser)
@@ -128,7 +128,7 @@ final class RowCollection<Rows: DataRows> {
         }
     }
     
-    func decodeIfPresent<T: Decodable>(_ type: T.Type, decoder: Decoder) throws -> T? {
+    func decodeNextIfPresent<T: Decodable>(_ type: T.Type, decoder: Decoder) throws -> T? {
         if let parser = options.parserForType(type) {
             guard let string = decodeNextIfPresent(String.self), !string.isEmpty else { return nil }
             return try parse(type, string: string, parser: parser)

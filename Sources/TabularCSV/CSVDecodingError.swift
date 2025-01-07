@@ -67,7 +67,7 @@ public struct CSVDecodingError: Error, CustomStringConvertible {
     }
     
     static func valueNotFound<T>(_ type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
-        CSVDecodingError.valueNotFound(T.self, context(description: "No more values available", forKey: key, rowNumber: rowNumber))
+        CSVDecodingError.valueNotFound(T.self, context(description: "Value of type \"\(type)\" not available", forKey: key, rowNumber: rowNumber))
     }
     
     static func isAtEnd(rowNumber: Int) -> CSVDecodingError {

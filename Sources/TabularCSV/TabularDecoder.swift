@@ -90,7 +90,7 @@ fileprivate struct TabularKeyedDecoding<Key: CodingKey, Rows: DataRows>: KeyedDe
     func decode(_ type: UInt128.Type, forKey key: Key) throws -> UInt128 { try data.decodeNext(type, forKey: key) }
 
     func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T {
-        try data.decode(type, forKey: key, decoder: decoder)
+        try data.decodeNext(type, forKey: key, decoder: decoder)
     }
 
     func decodeIfPresent(_ type: Bool.Type,    forKey key: Key) throws -> Bool?    { data.decodeNextIfPresent(type) }
@@ -111,7 +111,7 @@ fileprivate struct TabularKeyedDecoding<Key: CodingKey, Rows: DataRows>: KeyedDe
     func decodeIfPresent(_ type: UInt128.Type, forKey key: Key) throws -> UInt128? { data.decodeNextIfPresent(type) }
 
     func decodeIfPresent<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T? {
-        try data.decodeIfPresent(type, decoder: decoder)
+        try data.decodeNextIfPresent(type, decoder: decoder)
     }
     
     func nestedContainer<NestedKey: CodingKey>(
@@ -180,7 +180,7 @@ fileprivate struct TabularUnkeyedDecoding<Rows: DataRows>: UnkeyedDecodingContai
 
     mutating func decode<T: Decodable>(_ type: T.Type) throws -> T {
         try data.nextRow()
-        return try data.decode(type, decoder: decoder)
+        return try data.decodeNext(type, decoder: decoder)
     }
 
     private func decodeNextIfPresent<T: CSVPrimitive>(_ type: T.Type) -> T? {
@@ -207,7 +207,7 @@ fileprivate struct TabularUnkeyedDecoding<Rows: DataRows>: UnkeyedDecodingContai
 
     mutating func decodeIfPresent<T: Decodable>(_ type: T.Type) throws -> T? {
         try data.nextRow()
-        return try data.decodeIfPresent(type, decoder: decoder)
+        return try data.decodeNextIfPresent(type, decoder: decoder)
     }
     
     mutating func nestedContainer<NestedKey: CodingKey>(keyedBy keyType: NestedKey.Type) throws -> KeyedDecodingContainer<NestedKey> {
@@ -265,6 +265,6 @@ fileprivate struct TabularSingleValueDecoding<Rows: DataRows>: SingleValueDecodi
 
     func decode<T: Decodable>(_ type: T.Type) throws -> T {
         try data.checkValueIndex(index)
-        return try data.decode(type, decoder: decoder)
+        return try data.decodeNext(type, decoder: decoder)
     }
 }

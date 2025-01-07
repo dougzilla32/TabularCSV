@@ -91,7 +91,7 @@ final class VectorCollection<Matrix: DataMatrix> {
         columnIndex += 1
     }
     
-    func encode<T: Encodable>(_ value: T, encoder: Encoder) throws {
+    func encodeNext<T: Encodable>(_ value: T, encoder: Encoder) throws {
         if let formatter = options.formatterForType(T.self) {
             try formatter(value).encode(to: encoder)
         } else {
@@ -99,7 +99,7 @@ final class VectorCollection<Matrix: DataMatrix> {
         }
     }
 
-    func encodeIfPresent<T: Encodable>(_ value: T?, encoder: Encoder) throws {
+    func encodeNextIfPresent<T: Encodable>(_ value: T?, encoder: Encoder) throws {
         if let value, let formatter = options.formatterForType(T.self) {
             try formatter(value).encode(to: encoder)
         } else {

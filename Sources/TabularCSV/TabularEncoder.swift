@@ -84,7 +84,7 @@ fileprivate struct TabularKeyedEncoding<Key: CodingKey, Matrix: DataMatrix>: Key
     mutating func encode(_ value: UInt128,  forKey key: Key) throws { data.encodeNext(value) }
 
     mutating func encode<T: Encodable>(_ value: T, forKey key: Key) throws {
-        try data.encode(value, encoder: encoder)
+        try data.encodeNext(value, encoder: encoder)
     }
     
     mutating func encodeIfPresent(_ value: Bool?,    forKey key: Key) throws { data.encodeNextIfPresent(value) }
@@ -105,7 +105,7 @@ fileprivate struct TabularKeyedEncoding<Key: CodingKey, Matrix: DataMatrix>: Key
     mutating func encodeIfPresent(_ value: UInt128?, forKey key: Key) throws { data.encodeNextIfPresent(value) }
 
     mutating func encodeIfPresent<T: Encodable>(_ value: T?, forKey key: Key) throws {
-        try data.encodeIfPresent(value, encoder: encoder)
+        try data.encodeNextIfPresent(value, encoder: encoder)
     }
     
     mutating func nestedContainer<NestedKey: CodingKey>(
@@ -157,7 +157,7 @@ fileprivate struct TabularUnkeyedEncoding<Matrix: DataMatrix>: UnkeyedEncodingCo
     mutating func encode(_ value: UInt128) throws { data.encodeNext(value) }
 
     mutating func encode<T: Encodable>(_ value: T) throws {
-        try data.encode(value, encoder: encoder)
+        try data.encodeNext(value, encoder: encoder)
         data.nextRow()
     }
     
@@ -203,6 +203,6 @@ fileprivate struct TabularSingleValueEncoding<Matrix: DataMatrix>: SingleValueEn
     mutating func encode(_ value: UInt128)throws { data.encodeNext(value) }
 
     mutating func encode<T: Encodable>(_ value: T) throws {
-        try data.encode(value, encoder: encoder)
+        try data.encodeNext(value, encoder: encoder)
     }
 }
