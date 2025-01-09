@@ -39,6 +39,21 @@ public struct CSVDecodingError: Error, CustomStringConvertible {
         CSVDecodingError(error: DecodingError.dataCorruptedError(in: container, debugDescription: debugDescription))
     }
     
+    public var codingPath: [CodingKey] {
+        switch error {
+        case .typeMismatch(_, let context):
+            return context.codingPath
+        case .valueNotFound(_, let context):
+            return context.codingPath
+        case .keyNotFound(_, let context):
+            return context.codingPath
+        case .dataCorrupted(let context):
+            return context.codingPath
+        @unknown default:
+            return []
+        }
+    }
+    
     public var description: String {
         switch error {
         case .typeMismatch(let anyType, let context):

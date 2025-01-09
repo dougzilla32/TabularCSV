@@ -12,6 +12,8 @@ public typealias DataFrameDecoder = TabularDecoder<DataFrame.Rows>
 
 public typealias StringDecoder = TabularDecoder<[[String?]]>
 
+typealias StringRowsDecoder = TabularRowsDecoder<[[String?]]>
+
 public struct TabularDecoder<Rows: DataRows> {
     private let options: ReadingOptions
     
@@ -20,19 +22,19 @@ public struct TabularDecoder<Rows: DataRows> {
     public func decode<T: Decodable & Collection>(
         _ type: T.Type,
         rows: Rows,
-        rowMapping: [Int?]? = nil) throws -> T
+        rowPermutation: [Int?]? = nil) throws -> T
     {
-        try T(from: TabularRowsDecoder(rows: rows, rowMapping: rowMapping, withTypes: false, options: options))
+        try T(from: TabularRowsDecoder(rows: rows, transform: .init(rowPermutation), options: options))
     }
 
-    func decodeWithTypes<T: Decodable & Collection>(
+    func decodeWithHeaderAndTypes<T: Decodable & Collection>(
         _ type: T.Type,
         rows: Rows,
-        rowMapping: [Int?]? = nil) throws -> (value: T, csvTypes: [CSVType])
+        header: [String]?) throws -> (value: T, headerAndTypes: [HeaderAndType])
     {
-        let decoder = TabularRowsDecoder(rows: rows, rowMapping: rowMapping, withTypes: true, options: options)
+        let decoder = TabularRowsDecoder(rows: rows, transform: .init(header), options: options)
         let value = try T(from: decoder)
-        return (value: value, csvTypes: decoder.data.csvTypes ?? [])
+        return (value: value, headerAndTypes: decoder.data.headerAndTypes!)
     }
 }
 
@@ -41,8 +43,18 @@ struct TabularRowsDecoder<Rows: DataRows>: Decoder {
     var codingPath: [CodingKey] = []
     let userInfo: [CodingUserInfoKey: Any] = [:]
 
-    init(rows: Rows, rowMapping: [Int?]?, withTypes: Bool, options: ReadingOptions) {
-        self.data = RowCollection(rows: rows, rowMapping: rowMapping, withTypes: withTypes, options: options)
+    init(rows: Rows, transform: RowTransform, options: ReadingOptions) {
+        self.data = RowCollection(rows: rows, transform: transform, options: options)
+    }
+    
+    static func singleton(rows: Rows, options: ReadingOptions) throws -> TabularRowsDecoder<Rows> {
+        let decoder = TabularRowsDecoder(rows: rows, transform: .none, options: options)
+        try decoder.data.nextRow()
+        return decoder
+    }
+        
+    init(rows: Rows, options: ReadingOptions) {
+        self.data = RowCollection(rows: rows, transform: .none, options: options)
     }
     
     func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedDecodingContainer<Key> {
@@ -93,25 +105,25 @@ fileprivate struct TabularKeyedDecoding<Key: CodingKey, Rows: DataRows>: KeyedDe
         try data.decodeNext(type, forKey: key, decoder: decoder)
     }
 
-    func decodeIfPresent(_ type: Bool.Type,    forKey key: Key) throws -> Bool?    { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: String.Type,  forKey key: Key) throws -> String?  { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: Double.Type,  forKey key: Key) throws -> Double?  { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: Float.Type,   forKey key: Key) throws -> Float?   { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: Int.Type,     forKey key: Key) throws -> Int?     { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: Int8.Type,    forKey key: Key) throws -> Int8?    { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: Int16.Type,   forKey key: Key) throws -> Int16?   { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: Int32.Type,   forKey key: Key) throws -> Int32?   { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: Int64.Type,   forKey key: Key) throws -> Int64?   { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: UInt.Type,    forKey key: Key) throws -> UInt?    { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: UInt8.Type,   forKey key: Key) throws -> UInt8?   { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: UInt16.Type,  forKey key: Key) throws -> UInt16?  { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: UInt32.Type,  forKey key: Key) throws -> UInt32?  { data.decodeNextIfPresent(type) }
-    func decodeIfPresent(_ type: UInt64.Type,  forKey key: Key) throws -> UInt64?  { data.decodeNextIfPresent(type) }
+    func decodeIfPresent(_ type: Bool.Type,    forKey key: Key) throws -> Bool?    { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: String.Type,  forKey key: Key) throws -> String?  { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: Double.Type,  forKey key: Key) throws -> Double?  { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: Float.Type,   forKey key: Key) throws -> Float?   { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: Int.Type,     forKey key: Key) throws -> Int?     { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: Int8.Type,    forKey key: Key) throws -> Int8?    { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: Int16.Type,   forKey key: Key) throws -> Int16?   { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: Int32.Type,   forKey key: Key) throws -> Int32?   { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: Int64.Type,   forKey key: Key) throws -> Int64?   { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: UInt.Type,    forKey key: Key) throws -> UInt?    { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: UInt8.Type,   forKey key: Key) throws -> UInt8?   { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: UInt16.Type,  forKey key: Key) throws -> UInt16?  { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: UInt32.Type,  forKey key: Key) throws -> UInt32?  { data.decodeNextIfPresent(type, forKey: key) }
+    func decodeIfPresent(_ type: UInt64.Type,  forKey key: Key) throws -> UInt64?  { data.decodeNextIfPresent(type, forKey: key) }
     @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-    func decodeIfPresent(_ type: UInt128.Type, forKey key: Key) throws -> UInt128? { data.decodeNextIfPresent(type) }
+    func decodeIfPresent(_ type: UInt128.Type, forKey key: Key) throws -> UInt128? { data.decodeNextIfPresent(type, forKey: key) }
 
     func decodeIfPresent<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T? {
-        try data.decodeNextIfPresent(type, decoder: decoder)
+        try data.decodeNextIfPresent(type, forKey: key, decoder: decoder)
     }
     
     func nestedContainer<NestedKey: CodingKey>(

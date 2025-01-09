@@ -38,28 +38,57 @@ extension Array: DataRow where Element == String? {
 
 extension Array: DataRows where Element == [String?] { }
 
+struct HeaderAndType {
+    let name: String
+    let type: CSVType
+}
+
+public enum RowTransform {
+    case none
+    case permutation([Int?])
+    case map([String: Int]?)
+    
+    init(_ permutation: [Int?]?) {
+        if let permutation {
+            self = .permutation(permutation)
+        } else {
+            self = .none
+        }
+    }
+    
+    init(_ keys: [String]?) {
+        if let keys {
+            let mapping = Dictionary(uniqueKeysWithValues: keys.enumerated().map { ($1, $0) })
+            self = .map(mapping)
+        } else {
+            self = .map(nil)
+        }
+    }
+}
+
 final class RowCollection<Rows: DataRows> {
     let rowCount: Int
     private var rowsIterator: Rows.Iterator
-    private let rowMapping: [Int?]?
+    private let transform: RowTransform
     private let options: ReadingOptions
     private var currentRow: Rows.Element?
     private(set) var rowNumber: Int
     private(set) var currentRowIndex: Int
     private var currentColumnIndex: Int
-    private(set) var csvTypes: [CSVType]?
-
-    init(rows: Rows, rowMapping: [Int?]?, withTypes: Bool, options: ReadingOptions) {
+    private(set) var headerAndTypes: [HeaderAndType]?
+    
+    init(rows: Rows, transform: RowTransform, options: ReadingOptions) {
         self.rowCount = rows.count
         self.rowsIterator = rows.makeIterator()
-        self.rowMapping = rowMapping
+        self.transform = transform
         self.options = options
         self.currentRow = nil
-        self.rowNumber = (options.csvReadingOptions.hasHeaderRow && !withTypes) ? 1 : 0
+        self.rowNumber = options.csvReadingOptions.hasHeaderRow ? 1 : 0
         self.currentRowIndex = 0
         self.currentColumnIndex = -1
-        if withTypes {
-            csvTypes = []
+
+        if case .map = transform {
+            headerAndTypes = []
         }
     }
     
@@ -79,25 +108,48 @@ final class RowCollection<Rows: DataRows> {
         return true
     }
     
-    func decodeNext<T: CSVPrimitive>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
-        guard let value = decodeNextIfPresent(T.self) else {
+    func decodeNext<T: CSVPrimitive>(_ type: T.Type, forKey key: CodingKey? = nil, isPeek: Bool = false) throws -> T {
+        guard let value = decodeNextIfPresent(T.self, forKey: key, isPeek: isPeek) else {
             throw CSVDecodingError.valueNotFound(T.self, forKey: key, rowNumber: rowNumber)
         }
         return value
     }
     
-    func decodeNextIfPresent<T: CSVPrimitive>(_ type: T.Type, isPeek: Bool = false) -> T? {
+    func decodeNextIfPresent<T: CSVPrimitive>(_ type: T.Type, forKey key: CodingKey? = nil, isPeek: Bool = false) -> T? {
         guard let row = currentRow,
-            currentColumnIndex < row.count
+              currentColumnIndex < row.count
         else {
             return nil
         }
-        var value = row[rowMapping?[currentColumnIndex] ?? currentColumnIndex, type, options]
-        if options.nilAsEmptyString, type == String.self, value == nil {
-            value = "" as? T
+        
+        let index: Int?
+        switch transform {
+        case .none:
+            index = currentColumnIndex
+        case .permutation(let permutation):
+            index = permutation[currentColumnIndex]
+        case .map(let map):
+            if let map, let key {
+                index = map[key.stringValue]
+            } else {
+                index = currentColumnIndex
+            }
         }
+
+        var value: T?
+        if let index {
+            value = row[index, type, options]
+        } else {
+            value = nil
+        }
+
         if !isPeek {
-            csvTypes?.append(type.csvType)
+            if options.nilAsEmptyString, type == String.self, value == nil {
+                value = "" as? T
+            }
+            if let key {
+                headerAndTypes?.append(.init(name: key.stringValue, type: type.csvType))
+            }
             currentColumnIndex += 1
         }
         return value
@@ -109,14 +161,28 @@ final class RowCollection<Rows: DataRows> {
             return try parse(type, string: string, forKey: key, parser: parser)
         } else {
             do {
-                return try T(from: decoder)
+                // FIXME: do this another way -- next value may not be a string, this could be an entire row
+                // _ = try decodeNext(String.self, forKey: key, isPeek: true)
+                if let key {
+                    switch transform {
+                    case .map(_):
+                        let string = try decodeNext(String.self, forKey: key)
+                        return try T(from: try StringRowsDecoder.singleton(rows: [[string]], options: options))
+                    default:
+                        headerAndTypes?.append(.init(name: key.stringValue, type: .string))
+                        return try T(from: decoder)
+                    }
+                } else {
+                    return try T(from: decoder)
+                }
             } catch CodableStringError.invalidFormat(let string) {
                 throw CSVDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
             } catch let csvError as CSVDecodingError {
                 switch csvError.error {
                 case .dataCorrupted(let context):
                     var codingPath: [CodingKey] = []
-                    if let key = key { codingPath.append(key) }
+                    if let key { codingPath.append(key) }
+                    codingPath += csvError.codingPath
                     throw CSVDecodingError.dataCorrupted(
                         DecodingError.Context(
                             codingPath: codingPath,
@@ -128,14 +194,17 @@ final class RowCollection<Rows: DataRows> {
         }
     }
     
-    func decodeNextIfPresent<T: Decodable>(_ type: T.Type, decoder: Decoder) throws -> T? {
+    func decodeNextIfPresent<T: Decodable>(_ type: T.Type, forKey key: CodingKey? = nil, decoder: Decoder) throws -> T? {
         if let parser = options.parserForType(type) {
-            guard let string = decodeNextIfPresent(String.self), !string.isEmpty else { return nil }
+            guard let string = decodeNextIfPresent(String.self, forKey: key), !string.isEmpty else { return nil }
             return try parse(type, string: string, parser: parser)
         } else {
-            guard let string = decodeNextIfPresent(String.self, isPeek: true), !string.isEmpty else {
-                _ = decodeNextIfPresent(String.self)
+            guard decodeNextIfPresent(String.self, forKey: key, isPeek: true) != nil else {
+                _ = decodeNextIfPresent(String.self, forKey: key)
                 return nil
+            }
+            if let key {
+                headerAndTypes?.append(.init(name: key.stringValue, type: .string))
             }
             do {
                 return try T(from: decoder)

@@ -21,26 +21,67 @@ public struct TabularCSVWriter {
         self.init(options: opts)
     }
     
-    public func write<T: Encodable>(_ values: [T], header: [String]?, toPath filePath: String) throws {
-        let includesHeader = self.options.includesHeader(header != nil)
-        let fileURL = URL(fileURLWithPath: filePath)
-        let columns = try DataFrameEncoder(options: includesHeader.writingOptions).encode(values, header: header)
-        try DataFrame(columns: columns).writeCSV(to: fileURL, options: includesHeader.csvWritingOptions)
+    public func write<T: Encodable & Collection>(
+        _ value: T,
+        toPath filePath: String,
+        includesHeader: Bool = true,
+        overrideHeader: [String]? = nil) throws where T.Element: Encodable
+    {
+        try write(value, fileOrData: .file(filePath), includesHeader: includesHeader, overrideHeader: overrideHeader)
     }
     
-    public func csvRepresentation<T: Encodable>(_ values: [T], header: [String]?) throws -> Data {
-        let includesHeader = self.options.includesHeader(header != nil)
-        let columns = try DataFrameEncoder(options: includesHeader.writingOptions).encode(values, header: header)
-        return try DataFrame(columns: columns).csvRepresentation(options: includesHeader.csvWritingOptions)
+    public func csvRepresentation<T: Encodable & Collection>(
+        _ value: T,
+        includesHeader: Bool = true,
+        overrideHeader: [String]? = nil) throws -> Data where T.Element: Encodable
+    {
+        let dataValue = DataValue()
+        try write(value, fileOrData: .data(dataValue), includesHeader: includesHeader, overrideHeader: overrideHeader)
+        return dataValue.data
     }
-    
-    public func write<T: KeyedEncodable>(_ values: [T], includesHeader: Bool = true, toPath filePath: String) throws {
-        let header = T.CodingKeysType.allCases.map { $0.rawValue }
-        try write(values, header: header, toPath: filePath)
+
+    private func write<T: Encodable & Collection>(
+        _ value: T,
+        fileOrData: FileOrData,
+        includesHeader: Bool,
+        overrideHeader: [String]?) throws where T.Element: Encodable
+    {
+        let columnInfo = try introspectColumns(value, fileOrData: fileOrData, includesHeader: includesHeader, overrideHeader: overrideHeader)
+        let headerOptions = self.options.includesHeader(includesHeader)
+        let dataFrameEncoder = DataFrameEncoder(options: headerOptions.writingOptions)
+        let header = overrideHeader ?? columnInfo.encodedHeader
+        let columns = try dataFrameEncoder.encode(value, header: header, rowPermutation: columnInfo.permutation)
+
+        switch fileOrData {
+        case .file(let filePath):
+            try DataFrame(columns: columns).writeCSV(to: URL(fileURLWithPath: filePath), options: headerOptions.csvWritingOptions)
+        case .data(let csvData):
+            csvData.data = try DataFrame(columns: columns).csvRepresentation(options: headerOptions.csvWritingOptions)
+        }
     }
-    
-    public func csvRepresentation<T: KeyedEncodable>(_ values: [T], includesHeader: Bool = true) throws -> Data {
-        let header = T.CodingKeysType.allCases.map { $0.rawValue }
-        return try csvRepresentation(values, header: header)
+
+    private func introspectColumns<T: Encodable & Collection>(
+        _ value: T,
+        fileOrData: FileOrData,
+        includesHeader: Bool,
+        overrideHeader: [String]?) throws -> (permutation: [Int?]?, encodedHeader: [String]) where T.Element: Encodable
+    {
+        let typeEncoder = StringEncoder(options: options)
+        let result = try typeEncoder.encodeWithHeaderAndTypes([value.first], header: nil)
+        let encodedHeader = result.headerAndTypes.map(\.name)
+
+        let permutation: [Int?]?
+        if let overrideHeader {
+            permutation = try createHeaderPermutation(encodedHeader: encodedHeader, overrideHeader: overrideHeader)
+        } else {
+            permutation = nil
+        }
+        
+        return (permutation: permutation, encodedHeader: encodedHeader)
+    }
+
+    private func createHeaderPermutation(encodedHeader: [String], overrideHeader: [String]) throws -> [Int?] {
+        let overrideHeaderMap = Dictionary(uniqueKeysWithValues: overrideHeader.enumerated().map { ($1, $0) })
+        return encodedHeader.map { overrideHeaderMap[$0] }
     }
 }

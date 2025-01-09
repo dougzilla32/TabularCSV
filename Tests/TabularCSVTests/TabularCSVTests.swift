@@ -18,24 +18,6 @@ struct PersonWithoutHeight: Codable {
     @Nationality var nationality: String
 }
 
-struct PersonKeyed: KeyedCodable {
-    typealias CodingKeysType = CodingKeys
-    
-    let name: String
-    let age: Int
-    let height: Double
-    @YesNo var tall: Bool
-    @Nationality var nationality: String
-    
-    enum CodingKeys: String, CodingKey, CaseIterable {
-        case name = "Name"
-        case age = "Age"
-        case height = "Height"
-        case tall = "Tall"
-        case nationality = "Nationality"
-    }
-}
-
 @propertyWrapper
 public struct Nationality: CodableString {
     public let wrappedValue: String
@@ -58,49 +40,56 @@ public struct Nationality: CodableString {
     }
 }
 
-let PersonHeader = ["Name", "Age", "Height", "Tall", "Nationality"]
-let PersonCSVHeader = "Name,Age,Height,Tall,Nationality\n"
-let PersonCSVRows = "Alice,23,5.6,yes,UK\nBob,25,6.0,yes,US\nCharlie,27,5.3,no,US\n"
+let PersonCSVHeader = "name,age,height,tall,nationality\n"
+let PersonCSVRows = """
+    Alice,23,5.6,yes,UK
+    Bob,25,6.0,yes,US
+    Charlie,27,5.3,no,US
+    """ + "\n"
 let PersonCSV = PersonCSVHeader + PersonCSVRows
 
+let PersonCSVRowsBlankHeight = """
+    Alice,23,,yes,UK
+    Bob,25,,yes,US
+    Charlie,27,,no,US
+    """ + "\n"
+let PersonCSVBlankHeight = PersonCSVHeader + PersonCSVRowsBlankHeight
+
+let PersonCSVHeaderNoHeight = "name,age,tall,nationality\n"
+let PersonCSVRowsNoHeight = """
+    Alice,23,yes,UK
+    Bob,25,yes,US
+    Charlie,27,no,US
+    """ + "\n"
+let PersonCSVNoHeight = PersonCSVHeaderNoHeight + PersonCSVRowsNoHeight
+
+
 @Test func testPerson() async throws {
-    do {
-        let rows = try TabularCSVReader().read([Person].self, header: PersonHeader, csvData: PersonCSV.data(using: .utf8)!)
-        print(rows.count)
-        let string = String(data: try TabularCSVWriter().csvRepresentation(rows, header: PersonHeader), encoding: .utf8)!
-        #expect(string == PersonCSV)
-    }
-    
-    do {
-        let rows = try TabularCSVReader().read([PersonKeyed].self, csvData: PersonCSV.data(using: .utf8)!)
-        let string = String(data: try TabularCSVWriter().csvRepresentation(rows), encoding: .utf8)!
-        #expect(string == PersonCSV)
-    }
+    let csv = try TabularCSVReader().read([Person].self, csvData: PersonCSV.data(using: .utf8)!)
+    let string = String(data: try TabularCSVWriter().csvRepresentation(csv.rows, overrideHeader: csv.header), encoding: .utf8)!
+    #expect(string == PersonCSV)
 }
 
 @Test func testPersonWithoutHeight() async throws {
-    let rows = try TabularCSVReader().read([PersonWithoutHeight].self, header: PersonHeader, csvData: PersonCSV.data(using: .utf8)!)
-    let string = String(data: try TabularCSVWriter().csvRepresentation(rows, header: PersonHeader), encoding: .utf8)!
-    #expect(string == PersonCSV)
+    let csv = try TabularCSVReader().read([PersonWithoutHeight].self, csvData: PersonCSV.data(using: .utf8)!)
+    let blankHeight = String(data: try TabularCSVWriter().csvRepresentation(csv.rows, overrideHeader: csv.header), encoding: .utf8)!
+    #expect(blankHeight == PersonCSVBlankHeight)
+    let noHeight = String(data: try TabularCSVWriter().csvRepresentation(csv.rows), encoding: .utf8)!
+    #expect(noHeight == PersonCSVNoHeight)
 }
 
 @Test func testPersonNoHeader() async throws {
-    let rows = try TabularCSVReader().read([Person].self, header: nil, csvData: PersonCSVRows.data(using: .utf8)!)
-    let string = String(data: try TabularCSVWriter().csvRepresentation(rows, header: nil), encoding: .utf8)!
-    print(string)
-    #expect(string == PersonCSVRows)
-}
-
-@Test func testKeyedCodablePerson() async throws {
-    let rows = try TabularCSVReader().read([PersonKeyed].self, csvData: PersonCSV.data(using: .utf8)!)
-    let string = String(data: try TabularCSVWriter().csvRepresentation(rows), encoding: .utf8)!
-    #expect(string == PersonCSV)
+    let csv = try TabularCSVReader().read([Person].self, csvData: PersonCSVRows.data(using: .utf8)!, hasHeaderRow: false)
+    let withHeader = String(data: try TabularCSVWriter().csvRepresentation(csv.rows), encoding: .utf8)!
+    let withoutHeader = String(data: try TabularCSVWriter().csvRepresentation(csv.rows, includesHeader: false), encoding: .utf8)!
+    #expect(withHeader == PersonCSV)
+    #expect(withoutHeader == PersonCSVRows)
 }
 
 @Test func testCSVWriter() async throws {
     var columns: [AnyColumn] = []
-    columns.append(Column<Bool>(name: "Bool Column", capacity: 2).eraseToAnyColumn())
-    columns.append(Column<String>(name: "String Column", capacity: 2).eraseToAnyColumn())
+    columns.append(Column<Bool>(name: "Bool", capacity: 2).eraseToAnyColumn())
+    columns.append(Column<String>(name: "String", capacity: 2).eraseToAnyColumn())
     columns[0].append(true)
     columns[0].append(false)
     columns[1].append("Hi")
@@ -108,74 +97,51 @@ let PersonCSV = PersonCSVHeader + PersonCSVRows
     
     let data = try DataFrame(columns: columns).csvRepresentation(options: CSVWritingOptions(includesHeader: true))
     let string = String(data: data, encoding: .utf8)!
-    print("STRING \(string)")
+    #expect(string == "Bool,String\ntrue,Hi\nfalse,there\n")
 }
-
-@Test func testCodableCSV() async throws {
-    let rows = try CSVDecoder().decode([Person].self, from: PersonCSV.data(using: .utf8)!)
-}
-
 
 class Pet: Codable {
     let name: String
     let age: Int
     @YesNo var friendly: Bool
-}
-
-class Cat: Pet {
-    let color: String
-
-    required init(from decoder: any Decoder) throws {
-        self.color = try decoder.singleValueContainer().decode(String.self)
-        try super.init(from: decoder)
-    }
-}
-
-class PetKeyed: KeyedCodable {
-    typealias CodingKeysType = CodingKeys
     
-    let name: String
-    let age: Int
-    @YesNo var friendly: Bool
-    
-    enum CodingKeys: String, CodingKey, CaseIterable {
+    enum CodingKeys: String, CodingKey {
         case name = "Name"
         case age = "Age"
         case friendly = "Friendly"
     }
 }
 
-class CatKeyed: Pet, KeyedCodable {
-    typealias CodingKeysType = CodingKeys
-    
+class Cat: Pet {
     let color: String
+    let longHair: Bool
     
     required init(from decoder: any Decoder) throws {
-        self.color = try decoder.singleValueContainer().decode(String.self)
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.color = try container.decode(String.self, forKey: .color)
+        self.longHair = try container.decode(Bool.self, forKey: .longHair)
         try super.init(from: decoder)
     }
     
-    enum CodingKeys: String, CodingKey, CaseIterable {
+    override func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(color, forKey: .color)
+        try container.encode(longHair, forKey: .longHair)
+        try super.encode(to: encoder)
+    }
+    
+    enum CodingKeys: String, CodingKey {
         case color = "Color"
+        case longHair = "Long Hair"
     }
 }
 
-let CatHeader = ["Color", "Name", "Age", "Friendly"]
-let CatCSVHeader = "Color,Name,Age,Friendly\n"
-let CatCSVRows = "red,Alice,2,yes\nwhite,Bob,3,no\nblack,Charlie,5,yes\n"
+let CatCSVHeader = "Name,Age,Friendly,Color,Long Hair\n"
+let CatCSVRows = "Alice,2,yes,red,true\nBob,3,no,white,false\nCharlie,5,yes,black,true\n"
 let CatCSV = CatCSVHeader + CatCSVRows
 
 @Test func testCat() async throws {
-    do {
-        let rows = try TabularCSVReader().read([Cat].self, header: CatHeader, csvData: CatCSV.data(using: .utf8)!)
-        print(rows.count)
-        let string = String(data: try TabularCSVWriter().csvRepresentation(rows, header: CatHeader), encoding: .utf8)!
-        #expect(string == CatCSV)
-    }
-    
-    do {
-        let rows = try TabularCSVReader().read([CatKeyed].self, csvData: CatCSV.data(using: .utf8)!)
-        let string = String(data: try TabularCSVWriter().csvRepresentation(rows), encoding: .utf8)!
-        #expect(string == CatCSV)
-    }
+    let csv = try TabularCSVReader().read([Cat].self, csvData: CatCSV.data(using: .utf8)!)
+    let string = String(data: try TabularCSVWriter().csvRepresentation(csv.rows, overrideHeader: csv.header), encoding: .utf8)!
+    #expect(string == CatCSV)
 }
