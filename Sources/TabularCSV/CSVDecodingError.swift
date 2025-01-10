@@ -8,8 +8,46 @@
 
 import Foundation
 
-public struct CSVDecodingError: Error, CustomStringConvertible {
+public struct CSVDecodingError: Error, CustomStringConvertible, CustomDebugStringConvertible {
     public let error: DecodingError
+    
+    public var description: String {
+        switch error {
+        case .typeMismatch(_, let context):
+            return cleanQuotes(context.debugDescription)
+        case .valueNotFound(_, let context):
+            return cleanQuotes(context.debugDescription)
+        case .keyNotFound(_, let context):
+            return cleanQuotes(context.debugDescription)
+        case .dataCorrupted(let context):
+            return cleanQuotes(context.debugDescription)
+        default:
+            return error.localizedDescription
+        }
+    }
+    
+    public var debugDescription: String {
+        switch error {
+        case .typeMismatch(let anyType, let context):
+            return "typeMismatch(type: \"\(anyType)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
+        case .valueNotFound(let anyType, let context):
+            return "valueNotFound(type: \"\(anyType)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
+        case .keyNotFound(let anyKey, let context):
+            return "keyNotFound(key: \"\(anyKey)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
+        case .dataCorrupted(let context):
+            return "dataCorrupted(codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
+        default:
+            return error.localizedDescription
+        }
+    }
+    
+    private func name(_ codingPath: [CodingKey]) -> String {
+        return codingPath.map(\.stringValue).joined(separator: ".")
+    }
+    
+    private func cleanQuotes(_ string: String) -> String {
+        return string.replacingOccurrences(of: "\"", with: "\"")
+    }
 
     public static func typeMismatch(_ type: any Any.Type, _ context: DecodingError.Context) -> CSVDecodingError {
         CSVDecodingError(error: DecodingError.typeMismatch(type, context))
@@ -54,29 +92,6 @@ public struct CSVDecodingError: Error, CustomStringConvertible {
         }
     }
     
-    public var description: String {
-        switch error {
-        case .typeMismatch(let anyType, let context):
-            return "typeMismatch(type: \"\(anyType)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
-        case .valueNotFound(let anyType, let context):
-            return "valueNotFound(type: \"\(anyType)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
-        case .keyNotFound(let anyKey, let context):
-            return "keyNotFound(key: \"\(anyKey)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
-        case .dataCorrupted(let context):
-            return "dataCorrupted(codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
-        default:
-            return error.localizedDescription
-        }
-    }
-    
-    private func name(_ codingPath: [CodingKey]) -> String {
-        return codingPath.map(\.stringValue).joined(separator: ".")
-    }
-    
-    private func cleanQuotes(_ string: String) -> String {
-        return string.replacingOccurrences(of: "\"", with: "\"")
-    }
-
     static func dataCorrupted(string: String, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
         CSVDecodingError.dataCorrupted(context(description: "Cannot decode \"\(string)\"", forKey: key, rowNumber: rowNumber))
     }

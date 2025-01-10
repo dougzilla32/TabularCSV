@@ -9,24 +9,6 @@
 import Foundation
 import TabularData
 
-//public typealias KeyedCodable = KeyedDecodable & KeyedEncodable
-//
-//public protocol KeyedDecodable: Decodable {
-//    associatedtype CodingKeysType: CaseIterable & RawRepresentable where CodingKeysType.RawValue == String
-//
-//    var row: Int { get set }
-//    func postInit()
-//}
-//
-//public extension KeyedDecodable {
-//    var row: Int { get { -1 } set { } }
-//    func postInit() { }
-//}
-//
-//public protocol KeyedEncodable: Encodable {
-//    associatedtype CodingKeysType: CaseIterable & RawRepresentable where CodingKeysType.RawValue == String
-//}
-
 public enum FileError: Error {
     case open
 }
