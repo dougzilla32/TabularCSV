@@ -37,8 +37,8 @@ public struct AnyColumnMatrix: DataMatrix {
         if case .permutation(let permutation) = transform {
             for index in 0..<permutation.count {
                 if permutation[index] == nil {
-                    var column = Column<String?>(name: header?[index] ?? "Column \(index)", capacity: numRows)
-                    column.append(contentsOf: Array<String?>(repeating: nil, count: numRows))
+                    var column = Column<String>(name: header?[index] ?? "Column \(index)", capacity: numRows)
+                    column.append(contentsOf: Array<String>(repeating: "", count: numRows))
                     ensureMinimumLength(index: index)
                     vectors[index] = column.eraseToAnyColumn()
                 }

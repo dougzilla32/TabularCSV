@@ -9,11 +9,11 @@
 import Foundation
 import TabularData
 
-public enum FileError: Error {
+enum FileError: Error {
     case open
 }
 
-public enum DataError: Error {
+enum DataError: Error {
     case decoding
 }
 
@@ -133,7 +133,13 @@ public struct TabularCSVReader {
         }
 
         let dataFrameDecoder = DataFrameDecoder(options: options)
-        let rows = try dataFrameDecoder.decode(type, rows: dataFrame.rows, rowPermutation: columnInfo.permutation)
+        let rows: T
+        if options.useKeyMap {
+            let header = overrideHeader ?? (hasHeaderRow ? dataFrame.columns.map(\.name) : nil)
+            rows = try dataFrameDecoder.decodeWithMap(type, rows: dataFrame.rows, columns: dataFrame.columns, header: header)
+        } else {
+            rows = try dataFrameDecoder.decode(type, rows: dataFrame.rows, columns: dataFrame.columns, rowPermutation: columnInfo.permutation)
+        }
         return (rows: rows, header: overrideHeader ?? dataFrame.columns.map(\.name))
     }
     
@@ -165,7 +171,7 @@ public struct TabularCSVReader {
         }
 
         let typeDecoder = StringDecoder(options: options)
-        let result = try typeDecoder.decodeWithHeaderAndTypes(type, rows: [row], header: header)
+        let result = try typeDecoder.decodeTypes(type, rows: [row], columns: StringColumns(), header: header)
 
         let permutation: [Int?]?
         if let header {

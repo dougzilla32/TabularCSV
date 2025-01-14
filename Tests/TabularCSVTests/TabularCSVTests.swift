@@ -21,7 +21,7 @@ struct PersonWithoutHeight: Codable {
 }
 
 @propertyWrapper
-public struct Nationality: CodableString {
+public struct Nationality: CodableNilAsEmptyString {
     public let wrappedValue: String
     public init(wrappedValue: String) { self.wrappedValue = wrappedValue }
 
@@ -29,6 +29,7 @@ public struct Nationality: CodableString {
         switch string {
         case "US": "United States"
         case "UK": "United Kingdom"
+        case "": "Canada"
         default: nil
         }
     }
@@ -37,6 +38,7 @@ public struct Nationality: CodableString {
         switch value {
         case "United States": "US"
         case "United Kingdom": "UK"
+        case "Canada": ""
         default: value
         }
     }
@@ -91,7 +93,8 @@ func decodeEncode<T: Codable>(
 {
     do {
         let inputData = input.data(using: .utf8)!
-        let decoded = try TabularCSVReader().read([T].self, csvData: inputData, hasHeaderRow: hasHeaderRow)
+        let decoded = try TabularCSVReader() /* { $0.nilAsEmptyString = true} */ .read([T].self, csvData: inputData, hasHeaderRow: hasHeaderRow)
+//        print(decoded.header)
         let encoded = try TabularCSVWriter().csvRepresentation(
             decoded.rows,
             includesHeader: includesHeader,
@@ -137,6 +140,199 @@ func decodeEncode<T: Codable>(
         encodeWithHeader: false,
         includesHeader: false
     )
+}
+
+@Test func testDecodeNil() async throws {
+    let nilCSV = "name,age,height,tall,nationality\nAlice,23,5.6,yes,\nBob,25,6.0,yes,US\nCarl,27,5.3,no,\n"
+    try decodeEncode(
+        Person.self,
+        input: nilCSV
+    )
+}
+
+@Test func testRepeatKeys() async throws {
+    struct RepeatPerson: Codable {
+        let name: String
+        let age: Int
+        let height: Double
+        @YesNo var tall: Bool
+        @Nationality var nationality: String
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            _ = try container.decodeNil(forKey: .name)
+            self.name = try container.decode(String.self, forKey: .name)
+            _ = try container.decodeNil(forKey: .age)
+            self.age = try container.decode(Int.self, forKey: .age)
+            _ = try container.decodeNil(forKey: .height)
+            self.height = try container.decode(Double.self, forKey: .height)
+            _ = try container.decodeNil(forKey: .tall)
+            self._tall = try container.decode(YesNo.self, forKey: .tall)
+            _ = try container.decodeNil(forKey: .nationality)
+            self._nationality = try container.decode(Nationality.self, forKey: .nationality)
+            _ = try container.decode(Nationality.self, forKey: .nationality)
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case name
+            case age
+            case height
+            case tall
+            case nationality
+        }
+    }
+    
+    try decodeEncode(
+        RepeatPerson.self,
+        input: PersonCSV,
+        expectedException: "Value of type \"String\" not available for key \"nationality\" at row 2.")
+}
+
+@Test func testDecodeNilWilBool() async throws {
+    struct DecodeNilWilBool: Codable {
+        let name: String
+        let child: Bool
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+//            _ = try container.decodeNil(forKey: .name)
+            self.name = try container.decode(String.self, forKey: .name)
+            if try container.decodeNil(forKey: .child) {
+                child = false
+            } else {
+                self.child = try container.decode(Bool.self, forKey: .child)
+            }
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case name
+            case child
+        }
+    }
+    
+    try decodeEncode(DecodeNilWilBool.self, input: "name,child\nAlice,\nBob,true\nCarl,false\n")
+}
+
+// Test if decodeNil(forKey:) is called before decode(type, forKey:) with a different key
+@Test func testMismatchedDecodeNil() async throws {
+    
+}
+
+
+struct Content: Codable {
+    let content: [Element]
+
+    enum Element: Codable {
+        case header(Header)
+        case paragraph(Paragraph)
+        case footer(Footer)
+
+        struct Header: Codable {
+            let title: String
+            let level: Int
+        }
+
+        struct Paragraph: Codable {
+            let text: String
+        }
+
+        struct Footer: Codable {
+            let style: String
+            let copyright: String
+        }
+
+        struct BaseContent: Codable {
+            let type: ContentType
+
+            enum ContentType: String, Codable {
+                case header
+                case paragraph
+                case footer
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case type
+            }
+        }
+
+        init(from decoder: Decoder) throws {
+            let baseContainer = try decoder.container(keyedBy: BaseContent.CodingKeys.self)
+            let type = try baseContainer.decode(BaseContent.ContentType.self, forKey: .type)
+
+            let container = try decoder.singleValueContainer()
+
+            switch type {
+            case .header:
+                self = .header(try container.decode(Header.self))
+            case .paragraph:
+                self = .paragraph(try container.decode(Paragraph.self))
+            case .footer:
+                self = .footer(try container.decode(Footer.self))
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+
+            switch self {
+            case .header(let header):
+                try container.encode(header)
+            case .paragraph(let paragraph):
+                try container.encode(paragraph)
+            case .footer(let footer):
+                try container.encode(footer)
+            }
+        }
+    }
+}
+
+@Test func singleValueDecoding() async throws {
+    try decodeEncode(Content.self, input: "name,child\nAlice,\nBob,true\nCarl,false\n")
+}
+
+// Test a branch in decoding, when using decodeNil(forKey:) followed by decode(type, forKey:)
+// Need a new option for decoding with a map instead of a permutation
+// Need to fix TabularDecoder with DataFrame to reorder the rows first, and then not use the permutation for every row
+@Test func testConditionalDecoding() async throws {
+    
+}
+
+@Test func testRepeatKeysInvalidSequence() async throws {
+    struct RepeatPerson: Codable {
+        let name: String
+        let age: Int
+        let height: Double
+        @YesNo var tall: Bool
+        @Nationality var nationality: String
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            _ = try container.decodeNil(forKey: .name)
+            self.name = try container.decode(String.self, forKey: .name)
+            _ = try container.decodeNil(forKey: .age)
+            self.age = try container.decode(Int.self, forKey: .age)
+            _ = try container.decodeNil(forKey: .height)
+            self.height = try container.decode(Double.self, forKey: .height)
+            _ = try container.decodeNil(forKey: .nationality)
+            self._tall = try container.decode(YesNo.self, forKey: .tall)
+            _ = try container.decodeNil(forKey: .nationality)
+            self._nationality = try container.decode(Nationality.self, forKey: .nationality)
+            _ = try container.decode(Nationality.self, forKey: .nationality)
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case name
+            case age
+            case height
+            case tall
+            case nationality
+        }
+    }
+    
+    try decodeEncode(
+        RepeatPerson.self,
+        input: PersonCSV,
+        expectedException: "Value of type \"String\" not available for key \"nationality\" at row 2.")
 }
 
 @Test func testPersonWithoutHeight() async throws {

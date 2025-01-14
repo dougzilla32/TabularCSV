@@ -49,6 +49,18 @@ public struct CSVDecodingError: Error, CustomStringConvertible, CustomDebugStrin
         return string.replacingOccurrences(of: "\"", with: "\"")
     }
 
+    public func withKey(_ key: CodingKey?, rowNumber: Int) -> CSVDecodingError {
+        guard let key else { return self }
+        switch error {
+        case .typeMismatch(let anyType, _):
+            return CSVDecodingError.typeMismatch(anyType, forKey: key, rowNumber: rowNumber)
+        case .valueNotFound(let anyType, _):
+            return CSVDecodingError.valueNotFound(anyType, forKey: key, rowNumber: rowNumber)
+        default:
+            return self
+        }
+    }
+    
     public static func typeMismatch(_ type: any Any.Type, _ context: DecodingError.Context) -> CSVDecodingError {
         CSVDecodingError(error: DecodingError.typeMismatch(type, context))
     }
@@ -77,27 +89,28 @@ public struct CSVDecodingError: Error, CustomStringConvertible, CustomDebugStrin
         CSVDecodingError(error: DecodingError.dataCorruptedError(in: container, debugDescription: debugDescription))
     }
     
-    public var codingPath: [CodingKey] {
-        switch error {
-        case .typeMismatch(_, let context):
-            return context.codingPath
-        case .valueNotFound(_, let context):
-            return context.codingPath
-        case .keyNotFound(_, let context):
-            return context.codingPath
-        case .dataCorrupted(let context):
-            return context.codingPath
-        @unknown default:
-            return []
-        }
-    }
-    
-    static func dataCorrupted(string: String, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
-        CSVDecodingError.dataCorrupted(context(description: "Cannot decode \"\(string)\"", forKey: key, rowNumber: rowNumber))
+    static func typeMismatch<T>(_ type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.valueNotFound(T.self, context(description: "Value does not match expected type \"\(type)\"", forKey: key, rowNumber: rowNumber))
     }
     
     static func valueNotFound<T>(_ type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
         CSVDecodingError.valueNotFound(T.self, context(description: "Value of type \"\(type)\" not available", forKey: key, rowNumber: rowNumber))
+    }
+    
+    static func valueAlreadyDecoded<T>(_ type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.dataCorrupted(context(description: "Value of type \"\(type)\" already decoded", forKey: key, rowNumber: rowNumber))
+    }
+    
+    static func incorrectSequence<T>(_ type: T.Type, nilKey: CodingKey, currentKey: CodingKey?, rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.dataCorrupted(context(description: "decodeNil() key \"\(nilKey.stringValue)\" and decode(type) key \"\(currentKey?.stringValue ?? "nil")\" are required to match for the sequence decodeNil(forKey) -> decode(type, forKey), for type \"\(type)\"", forKey: nil, rowNumber: rowNumber))
+    }
+    
+    static func singleValueDecoding(rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.dataCorrupted(context(description: "Single value decoding error", rowNumber: rowNumber))
+    }
+    
+    static func dataCorrupted(string: String, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.dataCorrupted(context(description: "Cannot decode \"\(string)\"", forKey: key, rowNumber: rowNumber))
     }
     
     static func isAtEnd(rowNumber: Int) -> CSVDecodingError {
