@@ -35,13 +35,7 @@ public struct TabularDecoder<Rows: DataRows, Columns: DataColumns> {
         columns: Columns,
         header: [String]?) throws -> T
     {
-        let map: [String: Int]?
-        if let header {
-            map = Dictionary(uniqueKeysWithValues: header.enumerated().map { ($1, $0) })
-        } else {
-            map = nil
-        }
-
+        let map = keyIndexMap(header)
         let data = RowMap<Rows, Columns>(rows: rows, columns: columns, map: map, options: options)
         let decoder = TabularRowsDecoder<Rows, Columns>(data: data)
         return try T(from: decoder)
@@ -53,17 +47,35 @@ public struct TabularDecoder<Rows: DataRows, Columns: DataColumns> {
         columns: Columns,
         header: [String]?) throws -> (value: T, headerAndTypes: [HeaderAndType])
     {
+        var result: (value: T, headerAndTypes: [HeaderAndType])?
+        var nilKeys: Set<String> = []
+        let map = keyIndexMap(header)
+
+        repeat {
+            let data = RowTypes<Rows, Columns>(rows: rows, columns: columns, map: map, nilKeys: nilKeys, options: options)
+            let decoder = TabularRowsDecoder<Rows, Columns>(data: data)
+            
+            do {
+                let value = try T(from: decoder)
+                result = (value: value, headerAndTypes: data.headerAndTypes)
+            } catch RowTypeError.nilDecodingError {
+                nilKeys = data.nilKeys
+            } catch {
+                throw error
+            }
+        } while result == nil
+
+        return result!
+    }
+    
+    private func keyIndexMap(_ header: [String]?) -> [String: Int]? {
         let map: [String: Int]?
         if let header {
             map = Dictionary(uniqueKeysWithValues: header.enumerated().map { ($1, $0) })
         } else {
             map = nil
         }
-
-        let data = RowTypes<Rows, Columns>(rows: rows, columns: columns, map: map, options: options)
-        let decoder = TabularRowsDecoder<Rows, Columns>(data: data)
-        let value = try T(from: decoder)
-        return (value: value, headerAndTypes: data.headerAndTypes)
+        return map
     }
 }
 
@@ -283,6 +295,7 @@ fileprivate struct TabularSingleValueDecoding<Rows: DataRows, Columns: DataColum
             try decoder.data.singleValueDecode(isDecodeNil: true)
             return try data.decodeNil(forKey: nil)
         } catch {
+            decoder.data.deferredError(error)
             return true
         }
     }

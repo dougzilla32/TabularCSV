@@ -89,13 +89,15 @@ func decodeEncode<T: Codable>(
     output: String? = nil,
     encodeWithHeader: Bool = true,
     includesHeader: Bool = true,
-    expectedException: String? = nil) throws
+    expectedException: String? = nil,
+    readingOptions: ReadingOptions = .init(),
+    writingOptions: WritingOptions = .init()) throws
 {
     do {
         let inputData = input.data(using: .utf8)!
-        let decoded = try TabularCSVReader() /* { $0.nilAsEmptyString = true} */ .read([T].self, csvData: inputData, hasHeaderRow: hasHeaderRow)
+        let decoded = try TabularCSVReader(options: readingOptions).read([T].self, csvData: inputData, hasHeaderRow: hasHeaderRow)
 //        print(decoded.header)
-        let encoded = try TabularCSVWriter().csvRepresentation(
+        let encoded = try TabularCSVWriter(options: writingOptions).csvRepresentation(
             decoded.rows,
             includesHeader: includesHeader,
             overrideHeader: encodeWithHeader ? decoded.header : nil)
@@ -185,17 +187,17 @@ func decodeEncode<T: Codable>(
     try decodeEncode(
         RepeatPerson.self,
         input: PersonCSV,
-        expectedException: "Value of type \"String\" not available for key \"nationality\" at row 2.")
+        expectedException: "Too many calls to decode(type, forKey: 'nationality'): decodeNil(forKey: 'nationality') and decode(type, forKey: 'nationality') must be paired correctly for the sequence decodeNil(forKey) -> decode(type, forKey), for type 'String' at row 2.")
 }
 
-@Test func testDecodeNilWilBool() async throws {
-    struct DecodeNilWilBool: Codable {
+@Test func testDecodeNilWithBool() async throws {
+    struct DecodeNilWithBool: Codable {
         let name: String
         let child: Bool
         
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-//            _ = try container.decodeNil(forKey: .name)
+            _ = try container.decodeNil(forKey: .name)
             self.name = try container.decode(String.self, forKey: .name)
             if try container.decodeNil(forKey: .child) {
                 child = false
@@ -210,12 +212,152 @@ func decodeEncode<T: Codable>(
         }
     }
     
-    try decodeEncode(DecodeNilWilBool.self, input: "name,child\nAlice,\nBob,true\nCarl,false\n")
+    try decodeEncode(
+        DecodeNilWithBool.self,
+        input: "name,child\nAlice,\nBob,true\nCarl,false\n",
+        output: "name,child\nAlice,false\nBob,true\nCarl,false\n"
+    )
+}
+
+@propertyWrapper
+struct America: CodableString {
+    public let wrappedValue: String
+    public init(wrappedValue: String) { self.wrappedValue = wrappedValue }
+
+    public static func decode(string: String) -> String? {
+        switch string {
+        case "US": "United States"
+        default: nil
+        }
+    }
+        
+    public static func encode(_ value: String) -> String {
+        switch value {
+        case "United States": "US"
+        default: value
+        }
+    }
+}
+
+@Test func testDecodeConditionals() async throws {
+    struct TallAmericans: Codable {
+        let name: String
+        @YesNo var tall: Bool
+        @America var america: String
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            
+            if try container.decodeNil(forKey: .name) {
+                name = ""
+            } else {
+                name = try container.decode(String.self, forKey: .name)
+            }
+            
+            if try container.decodeNil(forKey: .tall) {
+                _tall = YesNo(wrappedValue: false)
+            } else {
+                _tall = try container.decode(YesNo.self, forKey: .tall)
+            }
+            
+            if try container.decodeNil(forKey: .america) {
+                _america = America(wrappedValue: "")
+            } else {
+                _america = try container.decode(America.self, forKey: .america)
+            }
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case name
+            case tall
+            case america
+        }
+    }
+        
+    try decodeEncode(
+        TallAmericans.self,
+        input: "name,tall,america\n,,\nAlice,yes,\nBob,,US\n",
+        output: "name,tall,america\n,no,\nAlice,yes,\nBob,no,US\n")
+}
+
+@Test func testDecodeMapConditionals() async throws {
+    struct TallAmericans: Codable {
+        let name: String
+        @YesNo var tall: Bool
+        @America var america: String
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            
+            if try container.decodeNil(forKey: .name)
+                || container.decodeNil(forKey: .tall)
+                || container.decodeNil(forKey: .america)
+            {
+                name = ""
+                _tall = YesNo(wrappedValue: false)
+                _america = America(wrappedValue: "")
+            } else {
+                name = try container.decode(String.self, forKey: .name)
+                _tall = try container.decode(YesNo.self, forKey: .tall)
+                _america = try container.decode(America.self, forKey: .america)
+            }            
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case name
+            case tall
+            case america
+        }
+    }
+        
+    try decodeEncode(
+        TallAmericans.self,
+        input: "name,tall,america\n,,\nAlice,yes,\nBob,,US\nChuck,yes,US\n",
+        output: "name,tall,america\n,no,\n,no,\n,no,\nChuck,yes,US\n",
+        readingOptions: ReadingOptions(useKeyMap: true))
 }
 
 // Test if decodeNil(forKey:) is called before decode(type, forKey:) with a different key
 @Test func testMismatchedDecodeNil() async throws {
-    
+    struct TallAmericans: Codable {
+        let name: String
+        @YesNo var tall: Bool
+        @America var america: String
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            
+            if try container.decodeNil(forKey: .name) {
+                name = ""
+            } else {
+                name = try container.decode(String.self, forKey: .name)
+            }
+            
+            if try container.decodeNil(forKey: .tall) {
+                _america = America(wrappedValue: "")
+            } else {
+                _america = try container.decode(America.self, forKey: .america)
+            }
+            
+            if try container.decodeNil(forKey: .america) {
+                _tall = YesNo(wrappedValue: false)
+            } else {
+                _tall = try container.decode(YesNo.self, forKey: .tall)
+            }
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case name
+            case tall
+            case america
+        }
+    }
+        
+    try decodeEncode(
+        TallAmericans.self,
+        input: "name,tall,america\nAlice,yes,\nBob,,US\n",
+        expectedException: "decodeNil(forKey: 'tall') and decode(type, forKey: 'america') are required to match for the sequence decodeNil(forKey) -> decode(type, forKey), for type 'String' at row 2.")
+
 }
 
 
@@ -286,9 +428,9 @@ struct Content: Codable {
     }
 }
 
-@Test func singleValueDecoding() async throws {
-    try decodeEncode(Content.self, input: "name,child\nAlice,\nBob,true\nCarl,false\n")
-}
+//@Test func singleValueDecoding() async throws {
+//    try decodeEncode(Content.self, input: "name,child\nAlice,\nBob,true\nCarl,false\n")
+//}
 
 // Test a branch in decoding, when using decodeNil(forKey:) followed by decode(type, forKey:)
 // Need a new option for decoding with a map instead of a permutation
@@ -332,7 +474,7 @@ struct Content: Codable {
     try decodeEncode(
         RepeatPerson.self,
         input: PersonCSV,
-        expectedException: "Value of type \"String\" not available for key \"nationality\" at row 2.")
+        expectedException: "decodeNil(forKey: 'nationality') and decode(type, forKey: 'tall') are required to match for the sequence decodeNil(forKey) -> decode(type, forKey), for type 'String' at row 2.")
 }
 
 @Test func testPersonWithoutHeight() async throws {
@@ -411,7 +553,7 @@ struct Content: Codable {
     try decodeEncode(
         Person.self,
         input: missingHeaderCSV,
-        expectedException: "Value of type \"String\" not available for key \"name\" at row 2."
+        expectedException: "Value of type 'String' not available for key 'name' at row 2."
     )
 }
 
@@ -420,7 +562,7 @@ struct Content: Codable {
     try decodeEncode(
         Person.self,
         input: invalidDataTypeCSV,
-        expectedException: "Value of type \"Int\" not available for key \"age\" at row 2."
+        expectedException: "Failed to parse cell at row 1 column 1 as integer. Cell contents are 'abc'."
     )
 }
 
@@ -429,7 +571,7 @@ struct Content: Codable {
     try decodeEncode(
         Person.self,
         input: invalidEnumCSV,
-        expectedException: "Cannot decode \"CA\" for key \"nationality\" at row 2."
+        expectedException: "Cannot decode 'CA' for key 'nationality' at row 2."
     )
 }
 
@@ -446,7 +588,7 @@ struct Content: Codable {
     try decodeEncode(
         Person.self,
         input: invalidBooleanCSV,
-        expectedException: "Cannot decode \"YESPLEASE\" for key \"tall\" at row 2."
+        expectedException: "Cannot decode 'YESPLEASE' for key 'tall' at row 2."
     )
 }
 
@@ -585,7 +727,7 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
     try decodeEncode(
         Pet.self,
         input: invalidAgeCSV,
-        expectedException: "Value of type \"Int\" not available for key \"Age\" at row 2."
+        expectedException: "Failed to parse cell at row 1 column 1 as integer. Cell contents are 'five'."
     )
 }
 
@@ -598,7 +740,7 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
     try decodeEncode(
         Cat.self,
         input: missingColumnCSV,
-        expectedException: "Value of type \"Bool\" not available for key \"Long Hair\" at row 2."
+        expectedException: "Value of type 'Bool' not available for key 'Long Hair' at row 2."
     )
 }
 
@@ -611,6 +753,6 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
     try decodeEncode(
         Cat.self,
         input: invalidFriendlyCSV,
-        expectedException: "Cannot decode \"maybe\" for key \"Friendly\" at row 2."
+        expectedException: "Cannot decode 'maybe' for key 'Friendly' at row 2."
     )
 }

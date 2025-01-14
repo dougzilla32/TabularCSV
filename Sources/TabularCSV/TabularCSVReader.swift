@@ -135,19 +135,24 @@ public struct TabularCSVReader {
         let dataFrameDecoder = DataFrameDecoder(options: options)
         let rows: T
         if options.useKeyMap {
-            let header = overrideHeader ?? (hasHeaderRow ? dataFrame.columns.map(\.name) : nil)
-            rows = try dataFrameDecoder.decodeWithMap(type, rows: dataFrame.rows, columns: dataFrame.columns, header: header)
+            rows = try dataFrameDecoder.decodeWithMap(type, rows: dataFrame.rows, columns: dataFrame.columns, header: columnInfo.header)
         } else {
             rows = try dataFrameDecoder.decode(type, rows: dataFrame.rows, columns: dataFrame.columns, rowPermutation: columnInfo.permutation)
         }
         return (rows: rows, header: overrideHeader ?? dataFrame.columns.map(\.name))
     }
     
+    struct ColumnInfo {
+        let header: [String]?
+        let permutation: [Int?]?
+        let types: [String: CSVType]
+    }
+    
     private func introspectColumns<T: Decodable & Collection>(
         _ type: T.Type,
         fileOrData: FileOrData,
         hasHeaderRow: Bool,
-        overrideHeader: [String]?) throws -> (permutation: [Int?]?, types: [String: CSVType])
+        overrideHeader: [String]?) throws -> ColumnInfo
     {
         let numLinesToRead = hasHeaderRow ? 2 : 1
         let firstLittleBit: (data: Data, lines: [String])
@@ -158,7 +163,7 @@ public struct TabularCSVReader {
             firstLittleBit = try TabularCSVReader.convertLines(from: dataValue.data, limit: numLinesToRead)
         }
         guard firstLittleBit.lines.count == numLinesToRead else {
-            return (permutation: nil, types: [:])
+            return ColumnInfo(header: [], permutation: nil, types: [:])
         }
         
         let stringTypes = Dictionary(uniqueKeysWithValues: (overrideHeader ?? []).map { ($0, CSVType.string) })
@@ -166,10 +171,14 @@ public struct TabularCSVReader {
         let dataFrame = try DataFrame(csvData: firstLittleBit.data, types: stringTypes, options: headerOptions.csvReadingOptions)
 
         let header = overrideHeader ?? (hasHeaderRow ? dataFrame.columns.map(\.name) : nil)
+        
+        if options.useKeyMap {
+            return ColumnInfo(header: header, permutation: nil, types: stringTypes)
+        }
+
         let row: [String?] = dataFrame.rows[0].map {
             if let value = $0 { String(describing: value) } else { nil }
         }
-
         let typeDecoder = StringDecoder(options: options)
         let result = try typeDecoder.decodeTypes(type, rows: [row], columns: StringColumns(), header: header)
 
@@ -180,7 +189,7 @@ public struct TabularCSVReader {
             permutation = nil
         }
         let typeMap = Dictionary(uniqueKeysWithValues: result.headerAndTypes.map { ($0.name, $0.type) })
-        return (permutation: permutation, types: typeMap)
+        return ColumnInfo(header: header, permutation: permutation, types: typeMap)
     }
     
     private func createHeaderPermutation(decodedHeader: [String], csvHeader: [String]) throws -> [Int?] {

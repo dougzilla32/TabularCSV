@@ -29,13 +29,13 @@ public struct CSVDecodingError: Error, CustomStringConvertible, CustomDebugStrin
     public var debugDescription: String {
         switch error {
         case .typeMismatch(let anyType, let context):
-            return "typeMismatch(type: \"\(anyType)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
+            return "typeMismatch(type: '\(anyType)', codingPath: '\(name(context.codingPath))', debugDescription: \(cleanQuotes(context.debugDescription)))"
         case .valueNotFound(let anyType, let context):
-            return "valueNotFound(type: \"\(anyType)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
+            return "valueNotFound(type: '\(anyType)', codingPath: '\(name(context.codingPath))', debugDescription: \(cleanQuotes(context.debugDescription)))"
         case .keyNotFound(let anyKey, let context):
-            return "keyNotFound(key: \"\(anyKey)\", codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
+            return "keyNotFound(key: '\(anyKey)', codingPath: '\(name(context.codingPath))', debugDescription: \(cleanQuotes(context.debugDescription)))"
         case .dataCorrupted(let context):
-            return "dataCorrupted(codingPath: \"\(name(context.codingPath))\", debugDescription: \(cleanQuotes(context.debugDescription)))"
+            return "dataCorrupted(codingPath: '\(name(context.codingPath))', debugDescription: \(cleanQuotes(context.debugDescription)))"
         default:
             return error.localizedDescription
         }
@@ -46,7 +46,7 @@ public struct CSVDecodingError: Error, CustomStringConvertible, CustomDebugStrin
     }
     
     private func cleanQuotes(_ string: String) -> String {
-        return string.replacingOccurrences(of: "\"", with: "\"")
+        return string.replacingOccurrences(of: "'", with: "'")
     }
 
     public func withKey(_ key: CodingKey?, rowNumber: Int) -> CSVDecodingError {
@@ -90,19 +90,27 @@ public struct CSVDecodingError: Error, CustomStringConvertible, CustomDebugStrin
     }
     
     static func typeMismatch<T>(_ type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
-        CSVDecodingError.valueNotFound(T.self, context(description: "Value does not match expected type \"\(type)\"", forKey: key, rowNumber: rowNumber))
+        CSVDecodingError.valueNotFound(T.self, context(description: "Value does not match expected type '\(type)'", forKey: key, rowNumber: rowNumber))
     }
     
     static func valueNotFound<T>(_ type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
-        CSVDecodingError.valueNotFound(T.self, context(description: "Value of type \"\(type)\" not available", forKey: key, rowNumber: rowNumber))
+        CSVDecodingError.valueNotFound(T.self, context(description: "Value of type '\(type)' not available", forKey: key, rowNumber: rowNumber))
     }
     
     static func valueAlreadyDecoded<T>(_ type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
-        CSVDecodingError.dataCorrupted(context(description: "Value of type \"\(type)\" already decoded", forKey: key, rowNumber: rowNumber))
+        CSVDecodingError.dataCorrupted(context(description: "Value of type '\(type)' already decoded", forKey: key, rowNumber: rowNumber))
+    }
+    
+    static func incorrectNilSequence<T>(_ type: T.Type, nilKey: CodingKey, currentKey: CodingKey?, rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.dataCorrupted(context(description: "decodeNil(forKey: '\(nilKey.stringValue)') and decodeNil(forKey: '\(currentKey?.stringValue ?? "nil")') are required to match for the sequence decodeNil(forKey) -> decodeNil(forKey), for type '\(type)'", forKey: nil, rowNumber: rowNumber))
     }
     
     static func incorrectSequence<T>(_ type: T.Type, nilKey: CodingKey, currentKey: CodingKey?, rowNumber: Int) -> CSVDecodingError {
-        CSVDecodingError.dataCorrupted(context(description: "decodeNil() key \"\(nilKey.stringValue)\" and decode(type) key \"\(currentKey?.stringValue ?? "nil")\" are required to match for the sequence decodeNil(forKey) -> decode(type, forKey), for type \"\(type)\"", forKey: nil, rowNumber: rowNumber))
+        CSVDecodingError.dataCorrupted(context(description: "decodeNil(forKey: '\(nilKey.stringValue)') and decode(type, forKey: '\(currentKey?.stringValue ?? "nil")') are required to match for the sequence decodeNil(forKey) -> decode(type, forKey), for type '\(type)'", forKey: nil, rowNumber: rowNumber))
+    }
+    
+    static func duplicateSequence<T>(_ type: T.Type, nilKey: CodingKey, currentKey: CodingKey?, rowNumber: Int) -> CSVDecodingError {
+        CSVDecodingError.dataCorrupted(context(description: "Too many calls to decode(type, forKey: '\(currentKey?.stringValue ?? "nil")'): decodeNil(forKey: '\(nilKey.stringValue)') and decode(type, forKey: '\(currentKey?.stringValue ?? "nil")') must be paired correctly for the sequence decodeNil(forKey) -> decode(type, forKey), for type '\(type)'", forKey: nil, rowNumber: rowNumber))
     }
     
     static func singleValueDecoding(rowNumber: Int) -> CSVDecodingError {
@@ -110,7 +118,7 @@ public struct CSVDecodingError: Error, CustomStringConvertible, CustomDebugStrin
     }
     
     static func dataCorrupted(string: String, forKey key: CodingKey? = nil, rowNumber: Int) -> CSVDecodingError {
-        CSVDecodingError.dataCorrupted(context(description: "Cannot decode \"\(string)\"", forKey: key, rowNumber: rowNumber))
+        CSVDecodingError.dataCorrupted(context(description: "Cannot decode '\(string)'", forKey: key, rowNumber: rowNumber))
     }
     
     static func isAtEnd(rowNumber: Int) -> CSVDecodingError {
@@ -130,7 +138,7 @@ public struct CSVDecodingError: Error, CustomStringConvertible, CustomDebugStrin
         var description = description
         if let key = key {
             codingPath.append(key)
-            description += " for key \"\(key.stringValue)\""
+            description += " for key '\(key.stringValue)'"
         }
         description += "\(atRow(rowNumber))."
         return DecodingError.Context(codingPath: codingPath, debugDescription: description)
