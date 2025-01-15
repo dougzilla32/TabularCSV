@@ -148,7 +148,7 @@ final class RowPermutation<Rows: DataRows, Columns: DataColumns>: RowCollection 
     
     func decodeNext<T: CSVPrimitive>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
         guard let value = try decodeNextIfPresent(T.self, forKey: key) else {
-            throw CSVDecodingError.valueNotFound(T.self, forKey: key, rowNumber: table.rowNumber)
+            throw DataDecodingError.valueNotFound(T.self, forKey: key, rowNumber: table.rowNumber)
         }
         return value
     }
@@ -232,7 +232,7 @@ final class RowMap<Rows: DataRows, Columns: DataColumns>: RowCollection {
     
     func decodeNext<T: CSVPrimitive>(_ type: T.Type, forKey key: CodingKey? = nil) throws -> T {
         guard let value = try decodeNextIfPresent(T.self, forKey: key) else {
-            throw CSVDecodingError.valueNotFound(T.self, forKey: key, rowNumber: table.rowNumber)
+            throw DataDecodingError.valueNotFound(T.self, forKey: key, rowNumber: table.rowNumber)
         }
         return value
     }
@@ -312,7 +312,7 @@ final class RowTypes<Rows: DataRows, Columns: DataColumns>: RowCollection {
     private func appendHeaderAndType(key: CodingKey, type: CSVType) throws {
         let duplicate = self.headerAndTypes.contains { $0.name == key.stringValue }
         if duplicate {
-            throw CSVDecodingError.duplicateSequence(String.self, nilKey: decodeNilKey ?? key, currentKey: key, rowNumber: table.rowNumber)
+            throw DataDecodingError.duplicateSequence(String.self, nilKey: decodeNilKey ?? key, currentKey: key, rowNumber: table.rowNumber)
         }
         headerAndTypes.append(HeaderAndType(name: key.stringValue, type: type))
     }
@@ -330,7 +330,7 @@ final class RowTypes<Rows: DataRows, Columns: DataColumns>: RowCollection {
     private func nextRowCheck() throws {
         decodeNilKey = nil
         if singleValueDecodingIndex != nil {
-            throw CSVDecodingError.singleValueDecoding(rowNumber: table.rowNumber)
+            throw DataDecodingError.singleValueDecoding(rowNumber: table.rowNumber)
         }
     }
     
@@ -342,7 +342,7 @@ final class RowTypes<Rows: DataRows, Columns: DataColumns>: RowCollection {
         let key = currentKey.top
         
         if let decodeNilKey {
-            throw CSVDecodingError.incorrectNilSequence(String.self, nilKey: decodeNilKey, currentKey: key, rowNumber: table.rowNumber)
+            throw DataDecodingError.incorrectNilSequence(String.self, nilKey: decodeNilKey, currentKey: key, rowNumber: table.rowNumber)
         }
         
         let isNil: Bool
@@ -365,7 +365,7 @@ final class RowTypes<Rows: DataRows, Columns: DataColumns>: RowCollection {
         let nilKeyMatch = decodeNilKeyMatch(key: key)
         
         guard let value = try decodeNextIfPresent(T.self, forKey: currentKey.top) else {
-            let error = CSVDecodingError.valueNotFound(T.self, forKey: key, rowNumber: table.rowNumber)
+            let error = DataDecodingError.valueNotFound(T.self, forKey: key, rowNumber: table.rowNumber)
             throw nilDecodingError(nilKeyMatch, forKey: key, error: error)
         }
         return value
@@ -398,7 +398,7 @@ final class RowTypes<Rows: DataRows, Columns: DataColumns>: RowCollection {
         
         // Sanity check for decodeNil followed by decodeNextIfPresent
         if let decodeNilKey, let key, decodeNilKey.stringValue != key.stringValue {
-            throw CSVDecodingError.incorrectSequence(T.self, nilKey: decodeNilKey, currentKey: key, rowNumber: rowNumber)
+            throw DataDecodingError.incorrectSequence(T.self, nilKey: decodeNilKey, currentKey: key, rowNumber: rowNumber)
         }
         self.decodeNilKey = nil
         
@@ -488,10 +488,10 @@ final class RowTypes<Rows: DataRows, Columns: DataColumns>: RowCollection {
     
     func singleValueDecode(isDecodeNil: Bool) throws {
         guard let singleValueDecodingIndex else {
-            throw CSVDecodingError.singleValueDecoding(rowNumber: table.rowNumber)
+            throw DataDecodingError.singleValueDecoding(rowNumber: table.rowNumber)
         }
         guard singleValueDecodingIndex == table.currentColumnIndex else {
-            throw CSVDecodingError.singleValueDecoding(rowNumber: table.rowNumber)
+            throw DataDecodingError.singleValueDecoding(rowNumber: table.rowNumber)
         }
         if !isDecodeNil {
             self.singleValueDecodingIndex = nil
@@ -527,7 +527,7 @@ fileprivate struct Table<Rows: DataRows, Columns: DataColumns> {
     
     mutating func nextRow() throws {
         guard nextRowIfPresent() else {
-            throw CSVDecodingError.isAtEnd(rowNumber: rowNumber)
+            throw DataDecodingError.isAtEnd(rowNumber: rowNumber)
         }
     }
     
@@ -549,8 +549,8 @@ fileprivate struct Table<Rows: DataRows, Columns: DataColumns> {
             }
             return value
         } catch CodableStringError.invalidFormat(let string) {
-            throw CSVDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
-        } catch let csvError as CSVDecodingError {
+            throw DataDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
+        } catch let csvError as DataDecodingError {
             throw csvError.withKey(key, rowNumber: rowNumber)
         }
     }
@@ -586,7 +586,7 @@ fileprivate struct Table<Rows: DataRows, Columns: DataColumns> {
 
     func parse<T>(_ type: T.Type, string: String, forKey key: CodingKey? = nil, parser: ((String) -> Any)) throws -> T {
         guard let value = parser(string) as? T else {
-            throw CSVDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
+            throw DataDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
         }
         return value
     }

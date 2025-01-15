@@ -166,11 +166,11 @@ fileprivate struct DataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: Da
         keyedBy keyType: NestedKey.Type,
         forKey key: Key) throws -> KeyedDecodingContainer<NestedKey>
     {
-        throw CSVDecodingError.nestedContainer(forKey: key, rowNumber: data.rowNumber)
+        throw DataDecodingError.nestedContainer(forKey: key, rowNumber: data.rowNumber)
     }
     
     func nestedUnkeyedContainer(forKey key: Key) throws -> UnkeyedDecodingContainer {
-        throw CSVDecodingError.nestedContainer(forKey: key, rowNumber: data.rowNumber)
+        throw DataDecodingError.nestedContainer(forKey: key, rowNumber: data.rowNumber)
     }
 
     func superDecoder() throws -> any Decoder {
@@ -195,7 +195,7 @@ fileprivate struct DataUnkeyedDecoding<Rows: DataRows, Columns: DataColumns>: Un
     
     private func checkEnd() throws {
         if isAtEnd {
-            throw CSVDecodingError.isAtEnd(rowNumber: data.rowNumber)
+            throw DataDecodingError.isAtEnd(rowNumber: data.rowNumber)
         }
     }
     
@@ -264,7 +264,7 @@ fileprivate struct DataUnkeyedDecoding<Rows: DataRows, Columns: DataColumns>: Un
     }
     
     mutating func nestedUnkeyedContainer() throws -> UnkeyedDecodingContainer {
-        throw CSVDecodingError.nestedContainer(rowNumber: data.rowNumber)
+        throw DataDecodingError.nestedContainer(rowNumber: data.rowNumber)
     }
     
     mutating func superDecoder() throws -> Decoder {
