@@ -1,324 +1,286 @@
 //
-//  TabularDecoder.swift
+//  TabularCSVReader.swift
 //  TabularCSV
 //
 //  Created by Doug on 12/5/24.
-//  Based partially on: https://stackoverflow.com/questions/45169254/custom-swift-encoder-decoder-for-the-strings-resource-format
+//  Copyright © 2024 Doug. All rights reserved.
 //
 
+import Foundation
 import TabularData
 
-public typealias DataFrameDecoder = TabularDecoder<DataFrame.Rows, [AnyColumn]>
+enum FileError: Error {
+    case open
+}
 
-public typealias StringDecoder = TabularDecoder<[[String?]], StringColumns>
+enum DataError: Error {
+    case decoding
+}
 
-typealias StringRowsDecoder = TabularRowsDecoder<[[String?]], StringColumns>
+class DataValue {
+    var data: Data
+    
+    init() { data = Data() }
 
-public struct TabularDecoder<Rows: DataRows, Columns: DataColumns> {
+    init(data: Data) { self.data = data }
+}
+
+enum FileOrData {
+    case file(String)
+    case data(DataValue)
+    
+    init(data: Data) {
+        self = .data(.init(data: data))
+    }
+}
+
+//public struct StreamingTask: Sendable {
+//    func start() { }
+//    func stop() { }
+//    func cancel() { }
+//}
+
+public struct TabularCSVReader {
+    //    public static func streamIn<T: Codable>(
+    //        type: T.Type,
+    //        header: [String],
+    //        atPath filePath: String,
+    //        options: ReadingOptions = .init(),
+    //        completionHandler: @escaping @Sendable (T?, Bool, (any Error)?) -> Void) throws -> StreamingTask
+    //    {
+    //        let columnTypes = try TabularCSV.determineColumnTypes(type: type, header: header, from: filePath, options: options)
+    //        let dataFrame = try DataFrame(contentsOfCSVFile: URL(fileURLWithPath: filePath), types: columnTypes, options: options.tabularOptions)
+    //        let headerIndexMap: [Int?]? =
+    //            options.hasHeaderRow
+    //            ? try createHeaderIndexMap(for: T.self, expectedHeader: header, csvHeader: dataFrame.columns.map(\.name))
+    //            : nil
+    //    }
+    
+    //    public static func streamInAsync<T: Codable & Sendable>(
+    //        type: T.Type,
+    //        header: [String],
+    //        atPath filePath: String,
+    //        options: ReadingOptions = .init()) -> AsyncThrowingStream<T, any Error>
+    //    {
+    //        AsyncThrowingStream { continuation in
+    //            do {
+    //                let task = try streamIn(type: type, header: header, atPath: filePath, options: options) { data, isEOF, error in
+    //                    if let error = error {
+    //                        continuation.finish(throwing: error)
+    //                    }
+    //                    if let data = data {
+    //                        continuation.yield(data)
+    //                    }
+    //                    if isEOF {
+    //                        continuation.finish()
+    //                    }
+    //                }
+    //                continuation.onTermination = { _ in
+    //                    task.stop()
+    //                }
+    //                task.start()
+    //            } catch {
+    //                continuation.finish(throwing: error)
+    //            }
+    //        }
+    //    }
+    
     private let options: ReadingOptions
-    
-    public init(options: ReadingOptions) { self.options = options }
-    
-    public func decode<T: Decodable & Collection>(
-        _ type: T.Type,
-        rows: Rows,
-        columns: Columns,
-        rowPermutation: [Int?]?) throws -> T
-    {
-        let data = RowPermutation<Rows, Columns>(rows: rows, columns: columns, permutation: rowPermutation, options: options)
-        return try T(from: TabularRowsDecoder<Rows, Columns>(data: data))
+
+    public init(options: ReadingOptions = .init()) {
+        self.options = options
     }
     
-    public func decodeWithMap<T: Decodable & Collection>(
-        _ type: T.Type,
-        rows: Rows,
-        columns: Columns,
-        header: [String]?) throws -> T
-    {
-        let map = keyIndexMap(header)
-        let data = RowMap<Rows, Columns>(rows: rows, columns: columns, map: map, options: options)
-        let decoder = TabularRowsDecoder<Rows, Columns>(data: data)
-        return try T(from: decoder)
-    }
-
-    func decodeTypes<T: Decodable & Collection>(
-        _ type: T.Type,
-        rows: Rows,
-        columns: Columns,
-        header: [String]?) throws -> (value: T, headerAndTypes: [HeaderAndType])
-    {
-        var result: (value: T, headerAndTypes: [HeaderAndType])?
-        var nilKeys: Set<String> = []
-        let map = keyIndexMap(header)
-
-        repeat {
-            let data = RowTypes<Rows, Columns>(rows: rows, columns: columns, map: map, nilKeys: nilKeys, options: options)
-            let decoder = TabularRowsDecoder<Rows, Columns>(data: data)
-            
-            do {
-                let value = try T(from: decoder)
-                result = (value: value, headerAndTypes: data.headerAndTypes)
-            } catch RowTypeError.nilDecodingError {
-                nilKeys = data.nilKeys
-            } catch {
-                throw error
-            }
-        } while result == nil
-
-        return result!
+    public init(options: ((inout ReadingOptions) -> Void)) {
+        var opts = ReadingOptions()
+        options(&opts)
+        self.init(options: opts)
     }
     
-    private func keyIndexMap(_ header: [String]?) -> [String: Int]? {
-        let map: [String: Int]?
-        if let header {
-            map = Dictionary(uniqueKeysWithValues: header.enumerated().map { ($1, $0) })
+    public func read<T: Decodable & Collection>(
+        _ type: T.Type,
+        fromPath filePath: String,
+        hasHeaderRow: Bool = true,
+        overrideHeader: [String]? = nil) throws -> (rows: T, header: [String])
+    {
+        try read(type, fileOrData: FileOrData.file(filePath), hasHeaderRow: hasHeaderRow, overrideHeader: overrideHeader)
+    }
+    
+    public func read<T: Decodable & Collection>(
+        _ type: T.Type,
+        csvData: Data,
+        hasHeaderRow: Bool = true,
+        overrideHeader: [String]? = nil) throws -> (rows: T, header: [String])
+    {
+        try read(type, fileOrData: FileOrData(data: csvData), hasHeaderRow: hasHeaderRow, overrideHeader: overrideHeader)
+    }
+    
+    private func read<T: Decodable & Collection>(
+        _ type: T.Type,
+        fileOrData: FileOrData,
+        hasHeaderRow: Bool,
+        overrideHeader: [String]?) throws -> (rows: T, header: [String])
+    {
+        let columnInfo = try introspectColumns(type, fileOrData: fileOrData, hasHeaderRow: hasHeaderRow, overrideHeader: overrideHeader)
+        let headerOptions = options.hasHeaderRow(hasHeaderRow)
+
+        let dataFrame: DataFrame
+        switch fileOrData {
+        case .file(let filePath):
+            dataFrame = try DataFrame(contentsOfCSVFile: URL(fileURLWithPath: filePath), types: columnInfo.types, options: headerOptions.csvReadingOptions)
+        case .data(let dataValue):
+            dataFrame = try DataFrame(csvData: dataValue.data, types: columnInfo.types, options: headerOptions.csvReadingOptions)
+        }
+
+        let dataFrameDecoder = DataFrameDecoder(options: options)
+        let rows: T
+        if options.useKeyMap {
+            rows = try dataFrameDecoder.decodeWithMap(type, rows: dataFrame.rows, columns: dataFrame.columns, header: columnInfo.header)
         } else {
-            map = nil
+            rows = try dataFrameDecoder.decode(type, rows: dataFrame.rows, columns: dataFrame.columns, rowPermutation: columnInfo.permutation)
         }
-        return map
-    }
-}
-
-struct TabularRowsDecoder<Rows: DataRows, Columns: DataColumns>: Decoder {
-    fileprivate let data: RowCollection
-    var codingPath: [CodingKey] = []
-    let userInfo: [CodingUserInfoKey: Any] = [:]
-
-    init(data: RowCollection) {
-        self.data = data
+        return (rows: rows, header: overrideHeader ?? dataFrame.columns.map(\.name))
     }
     
-    static func singleton(rows: Rows, columns: Columns, options: ReadingOptions) throws -> TabularRowsDecoder<Rows, Columns> {
-        let data = RowPermutation<Rows, Columns>(rows: rows, columns: columns, permutation: nil, options: options)
-        let decoder = TabularRowsDecoder<Rows, Columns>(data: data)
-        try decoder.data.nextRow()
-        return decoder
-    }
-        
-    func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedDecodingContainer<Key> {
-        KeyedDecodingContainer(TabularKeyedDecoding<Key, Rows, Columns>(decoder: self))
+    struct ColumnInfo {
+        let header: [String]?
+        let permutation: [Int?]?
+        let types: [String: CSVType]
     }
     
-    func unkeyedContainer() -> UnkeyedDecodingContainer {
-        TabularUnkeyedDecoding(decoder: self)
-    }
-    
-    func singleValueContainer() -> SingleValueDecodingContainer {
-        TabularSingleValueDecoding(decoder: self)
-    }
-}
-
-fileprivate struct TabularKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: DataColumns>: KeyedDecodingContainerProtocol {
-    private let decoder: TabularRowsDecoder<Rows, Columns>
-    var codingPath: [CodingKey] = []
-    var allKeys: [Key] = []
-    func contains(_ key: Key) -> Bool { true }
-    
-    init(decoder: TabularRowsDecoder<Rows, Columns>) { self.decoder = decoder }
-    
-    var data: RowCollection { decoder.data }
-
-    func decodeNil(forKey key: Key) throws -> Bool {
-        try data.decodeNil(forKey: key)
-    }
-    
-    func decode(_ type: Bool.Type,    forKey key: Key) throws -> Bool    { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: String.Type,  forKey key: Key) throws -> String  { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: Double.Type,  forKey key: Key) throws -> Double  { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: Float.Type,   forKey key: Key) throws -> Float   { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: Int.Type,     forKey key: Key) throws -> Int     { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: Int8.Type,    forKey key: Key) throws -> Int8    { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: Int16.Type,   forKey key: Key) throws -> Int16   { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: Int32.Type,   forKey key: Key) throws -> Int32   { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: Int64.Type,   forKey key: Key) throws -> Int64   { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: UInt.Type,    forKey key: Key) throws -> UInt    { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: UInt8.Type,   forKey key: Key) throws -> UInt8   { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: UInt16.Type,  forKey key: Key) throws -> UInt16  { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: UInt32.Type,  forKey key: Key) throws -> UInt32  { try data.decodeNext(type, forKey: key) }
-    func decode(_ type: UInt64.Type,  forKey key: Key) throws -> UInt64  { try data.decodeNext(type, forKey: key) }
-    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-    func decode(_ type: UInt128.Type, forKey key: Key) throws -> UInt128 { try data.decodeNext(type, forKey: key) }
-
-    func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T {
-        try data.decodeNext(type, forKey: key, decoder: decoder)
-    }
-
-    func decodeIfPresent(_ type: Bool.Type,    forKey key: Key) throws -> Bool?    { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: String.Type,  forKey key: Key) throws -> String?  { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: Double.Type,  forKey key: Key) throws -> Double?  { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: Float.Type,   forKey key: Key) throws -> Float?   { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: Int.Type,     forKey key: Key) throws -> Int?     { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: Int8.Type,    forKey key: Key) throws -> Int8?    { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: Int16.Type,   forKey key: Key) throws -> Int16?   { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: Int32.Type,   forKey key: Key) throws -> Int32?   { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: Int64.Type,   forKey key: Key) throws -> Int64?   { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: UInt.Type,    forKey key: Key) throws -> UInt?    { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: UInt8.Type,   forKey key: Key) throws -> UInt8?   { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: UInt16.Type,  forKey key: Key) throws -> UInt16?  { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: UInt32.Type,  forKey key: Key) throws -> UInt32?  { try data.decodeNextIfPresent(type, forKey: key) }
-    func decodeIfPresent(_ type: UInt64.Type,  forKey key: Key) throws -> UInt64?  { try data.decodeNextIfPresent(type, forKey: key) }
-    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-    func decodeIfPresent(_ type: UInt128.Type, forKey key: Key) throws -> UInt128? { try data.decodeNextIfPresent(type, forKey: key) }
-
-    func decodeIfPresent<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T? {
-        try data.decodeNextIfPresent(type, forKey: key, decoder: decoder)
-    }
-    
-    func nestedContainer<NestedKey: CodingKey>(
-        keyedBy keyType: NestedKey.Type,
-        forKey key: Key) throws -> KeyedDecodingContainer<NestedKey>
+    private func introspectColumns<T: Decodable & Collection>(
+        _ type: T.Type,
+        fileOrData: FileOrData,
+        hasHeaderRow: Bool,
+        overrideHeader: [String]?) throws -> ColumnInfo
     {
-        throw CSVDecodingError.nestedContainer(forKey: key, rowNumber: data.rowNumber)
-    }
-    
-    func nestedUnkeyedContainer(forKey key: Key) throws -> UnkeyedDecodingContainer {
-        throw CSVDecodingError.nestedContainer(forKey: key, rowNumber: data.rowNumber)
-    }
-
-    func superDecoder() throws -> any Decoder {
-        try superDecoder(forKey: Key(stringValue: "super")!)
-    }
-
-    func superDecoder(forKey key: Key) throws -> any Decoder {
-        decoder
-    }
-}
-
-fileprivate struct TabularUnkeyedDecoding<Rows: DataRows, Columns: DataColumns>: UnkeyedDecodingContainer {
-    private let decoder: TabularRowsDecoder<Rows, Columns>
-    var codingPath: [CodingKey] = []
-    var count: Int? { return data.rowCount }
-    var isAtEnd: Bool { return data.currentRowIndex >= data.rowCount }
-    var currentIndex: Int { return data.currentRowIndex }
-    
-    init(decoder: TabularRowsDecoder<Rows, Columns>) { self.decoder = decoder }
-    
-    var data: RowCollection { decoder.data }
-    
-    private func checkEnd() throws {
-        if isAtEnd {
-            throw CSVDecodingError.isAtEnd(rowNumber: data.rowNumber)
+        let numLinesToRead = hasHeaderRow ? 2 : 1
+        let firstLittleBit: (data: Data, lines: [String])
+        switch fileOrData {
+        case .file(let filePath):
+            firstLittleBit = try TabularCSVReader.readLines(from: filePath, limit: numLinesToRead)
+        case .data(let dataValue):
+            firstLittleBit = try TabularCSVReader.convertLines(from: dataValue.data, limit: numLinesToRead)
         }
-    }
-    
-    private func decodeNext<T: CSVPrimitive>(_ type: T.Type) throws -> T {
-        try data.nextRow()
-        return try data.decodeNext(type, forKey: nil)
-    }
-    
-    mutating func decodeNil() throws -> Bool {
-        try data.nextRow()
-        return try data.decodeNil(forKey: nil)
-    }
-    
-    mutating func decode(_ type: Bool.Type    ) throws -> Bool    { try decodeNext(type) }
-    mutating func decode(_ type: String.Type  ) throws -> String  { try decodeNext(type) }
-    mutating func decode(_ type: Double.Type  ) throws -> Double  { try decodeNext(type) }
-    mutating func decode(_ type: Float.Type   ) throws -> Float   { try decodeNext(type) }
-    mutating func decode(_ type: Int.Type     ) throws -> Int     { try decodeNext(type) }
-    mutating func decode(_ type: Int8.Type    ) throws -> Int8    { try decodeNext(type) }
-    mutating func decode(_ type: Int16.Type   ) throws -> Int16   { try decodeNext(type) }
-    mutating func decode(_ type: Int32.Type   ) throws -> Int32   { try decodeNext(type) }
-    mutating func decode(_ type: Int64.Type   ) throws -> Int64   { try decodeNext(type) }
-    mutating func decode(_ type: UInt.Type    ) throws -> UInt    { try decodeNext(type) }
-    mutating func decode(_ type: UInt8.Type   ) throws -> UInt8   { try decodeNext(type) }
-    mutating func decode(_ type: UInt16.Type  ) throws -> UInt16  { try decodeNext(type) }
-    mutating func decode(_ type: UInt32.Type  ) throws -> UInt32  { try decodeNext(type) }
-    mutating func decode(_ type: UInt64.Type  ) throws -> UInt64  { try decodeNext(type) }
-    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-    mutating func decode(_ type: UInt128.Type ) throws -> UInt128 { try decodeNext(type) }
-
-    mutating func decode<T: Decodable>(_ type: T.Type) throws -> T {
-        try data.nextRow()
-        return try data.decodeNext(type, forKey: nil, decoder: decoder)
-    }
-
-    private func decodeNextIfPresent<T: CSVPrimitive>(_ type: T.Type) throws -> T? {
-        guard try data.nextRowIfPresent() else { return nil }
-        return try data.decodeNextIfPresent(type, forKey: nil)
-    }
-
-    mutating func decodeIfPresent(_ type: Bool.Type    ) throws -> Bool?    { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: String.Type  ) throws -> String?  { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: Double.Type  ) throws -> Double?  { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: Float.Type   ) throws -> Float?   { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: Int.Type     ) throws -> Int?     { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: Int8.Type    ) throws -> Int8?    { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: Int16.Type   ) throws -> Int16?   { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: Int32.Type   ) throws -> Int32?   { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: Int64.Type   ) throws -> Int64?   { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: UInt.Type    ) throws -> UInt?    { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: UInt8.Type   ) throws -> UInt8?   { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: UInt16.Type  ) throws -> UInt16?  { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: UInt32.Type  ) throws -> UInt32?  { try decodeNextIfPresent(type) }
-    mutating func decodeIfPresent(_ type: UInt64.Type  ) throws -> UInt64?  { try decodeNextIfPresent(type) }
-    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-    mutating func decodeIfPresent(_ type: UInt128.Type ) throws -> UInt128? { try decodeNextIfPresent(type) }
-
-    mutating func decodeIfPresent<T: Decodable>(_ type: T.Type) throws -> T? {
-        try data.nextRow()
-        return try data.decodeNextIfPresent(type, forKey: nil, decoder: decoder)
-    }
-    
-    mutating func nestedContainer<NestedKey: CodingKey>(keyedBy keyType: NestedKey.Type) throws -> KeyedDecodingContainer<NestedKey> {
-        try checkEnd()
-        return KeyedDecodingContainer(TabularKeyedDecoding<NestedKey, Rows, Columns>(decoder: decoder))
-    }
-    
-    mutating func nestedUnkeyedContainer() throws -> UnkeyedDecodingContainer {
-        throw CSVDecodingError.nestedContainer(rowNumber: data.rowNumber)
-    }
-    
-    mutating func superDecoder() throws -> Decoder {
-        decoder
-    }
-}
-
-fileprivate struct TabularSingleValueDecoding<Rows: DataRows, Columns: DataColumns>: SingleValueDecodingContainer {
-    private let decoder: TabularRowsDecoder<Rows, Columns>
-    var codingPath: [CodingKey] = []
-
-    init(decoder: TabularRowsDecoder<Rows, Columns>) {
-        self.decoder = decoder
-        decoder.data.singleValueContainer()
-    }
-    
-    var data: RowCollection { decoder.data }
-    
-    private func decodeNext<T: CSVPrimitive>(_ type: T.Type) throws -> T {
-        try decoder.data.singleValueDecode(isDecodeNil: false)
-        return try data.decodeNext(type, forKey: nil)
-    }
-
-    func decodeNil() -> Bool {
-        do {
-            try decoder.data.singleValueDecode(isDecodeNil: true)
-            return try data.decodeNil(forKey: nil)
-        } catch {
-            decoder.data.deferredError(error)
-            return true
+        guard firstLittleBit.lines.count == numLinesToRead else {
+            return ColumnInfo(header: [], permutation: nil, types: [:])
         }
+        
+        let stringTypes = Dictionary(uniqueKeysWithValues: (overrideHeader ?? []).map { ($0, CSVType.string) })
+        let headerOptions = options.hasHeaderRow(hasHeaderRow)
+        let dataFrame = try DataFrame(csvData: firstLittleBit.data, types: stringTypes, options: headerOptions.csvReadingOptions)
+
+        let header = overrideHeader ?? (hasHeaderRow ? dataFrame.columns.map(\.name) : nil)
+        
+        if options.useKeyMap {
+            return ColumnInfo(header: header, permutation: nil, types: stringTypes)
+        }
+
+        let row: [String?] = dataFrame.rows[0].map {
+            if let value = $0 { String(describing: value) } else { nil }
+        }
+        let typeDecoder = StringDecoder(options: options)
+        let result = try typeDecoder.decodeTypes(type, rows: [row], columns: StringColumns(), header: header)
+
+        let permutation: [Int?]?
+        if let header {
+            permutation = try createHeaderPermutation(decodedHeader: result.headerAndTypes.map(\.name), csvHeader: header)
+        } else {
+            permutation = nil
+        }
+        let typeMap = Dictionary(uniqueKeysWithValues: result.headerAndTypes.map { ($0.name, $0.type) })
+        return ColumnInfo(header: header, permutation: permutation, types: typeMap)
     }
     
-    func decode(_ type: Bool.Type   ) throws -> Bool    { try decodeNext(type) }
-    func decode(_ type: String.Type ) throws -> String  { try decodeNext(type) }
-    func decode(_ type: Double.Type ) throws -> Double  { try decodeNext(type) }
-    func decode(_ type: Float.Type  ) throws -> Float   { try decodeNext(type) }
-    func decode(_ type: Int.Type    ) throws -> Int     { try decodeNext(type) }
-    func decode(_ type: Int8.Type   ) throws -> Int8    { try decodeNext(type) }
-    func decode(_ type: Int16.Type  ) throws -> Int16   { try decodeNext(type) }
-    func decode(_ type: Int32.Type  ) throws -> Int32   { try decodeNext(type) }
-    func decode(_ type: Int64.Type  ) throws -> Int64   { try decodeNext(type) }
-    func decode(_ type: UInt.Type   ) throws -> UInt    { try decodeNext(type) }
-    func decode(_ type: UInt8.Type  ) throws -> UInt8   { try decodeNext(type) }
-    func decode(_ type: UInt16.Type ) throws -> UInt16  { try decodeNext(type) }
-    func decode(_ type: UInt32.Type ) throws -> UInt32  { try decodeNext(type) }
-    func decode(_ type: UInt64.Type ) throws -> UInt64  { try decodeNext(type) }
-    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-    func decode(_ type: UInt128.Type) throws -> UInt128 { try decodeNext(type) }
+    private func createHeaderPermutation(decodedHeader: [String], csvHeader: [String]) throws -> [Int?] {
+        let csvHeaderMap = Dictionary(uniqueKeysWithValues: csvHeader.enumerated().map { ($1, $0) })
+        return decodedHeader.map { csvHeaderMap[$0] }
+    }
 
-    func decode<T: Decodable>(_ type: T.Type) throws -> T {
-        try decoder.data.singleValueDecode(isDecodeNil: false)
-        return try data.decodeNext(type, forKey: nil, decoder: decoder)
+// TODO: compare performance: use permutation array VS reordering the DataFrame rows without permutation
+//    private static func reorder(row: [String], headersIndexMap: [Int?]?) -> [String?] {
+//        guard let headersIndexMap else { return row }
+//
+//        return headersIndexMap.map { index in
+//            guard let index = index, index < row.count else { return nil }
+//            return row[index]
+//        }
+//    }
+
+    private static func readLines(from filePath: String, limit: Int) throws -> (data: Data, lines: [String]) {
+        var string = ""
+        var lines = [String]()
+        var count = 0
+        
+        guard let file = fopen(filePath, "r") else {
+            throw FileError.open
+        }
+
+        var linePointer: UnsafeMutablePointer<CChar>? = nil
+        var lineCap: Int = 0
+
+        while getline(&linePointer, &lineCap, file) > 0 {
+            if let linePointer = linePointer {
+                let line = String(cString: linePointer)
+                string.append(line)
+                lines.append(line)
+                count += 1
+                if count == limit {
+                    break
+                }
+            }
+        }
+
+        free(linePointer)
+        fclose(file)
+
+        return (data: string.data(using: .utf8)!, lines: lines)
+    }
+    
+    private static func convertLines(from data: Data, limit: Int, encoding: String.Encoding = .utf8) throws -> (data: Data, lines: [String]) {
+        // Buffer to hold the partial result
+        var lines: [String] = []
+
+        // Read the data byte by byte
+        let newLineChar = UInt8(ascii: "\n")
+        var shortenedData = Data()
+        var currentLine = Data()
+
+        for byte in data {
+            // Append byte to the current line
+            shortenedData.append(byte)
+
+            // Check if this is a newline character
+            if byte == newLineChar {
+                // Convert the line to a string
+                if let line = String(data: currentLine, encoding: encoding) {
+                    lines.append(line)
+
+                    // Stop if we have collected enough lines
+                    if lines.count == limit {
+                        break
+                    }
+
+                    // Clear the buffer for the next line
+                    currentLine.removeAll()
+                } else {
+                    // Handle decoding error (e.g., invalid UTF-8 sequence)
+                    throw DataError.decoding
+                }
+            } else {
+                currentLine.append(byte)
+            }
+        }
+
+        // Add any remaining line if we stopped before reaching the limit
+        if lines.count < limit, !currentLine.isEmpty {
+            if let line = String(data: currentLine, encoding: encoding) {
+                lines.append(line)
+            } else {
+                throw DataError.decoding
+            }
+        }
+
+        return (data: shortenedData, lines: lines)
     }
 }
