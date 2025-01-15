@@ -1,5 +1,5 @@
 //
-//  TabularEncoder.swift
+//  TypedEncoder.swift
 //  TabularCSV
 //
 //  Created by Doug on 12/18/24.
@@ -7,11 +7,11 @@
 
 import TabularData
 
-public typealias DataFrameEncoder = TabularEncoder<AnyColumnMatrix>
+public typealias DataFrameEncoder = TypedEncoder<AnyColumnMatrix>
 
-public typealias StringEncoder = TabularEncoder<StringMatrix>
+public typealias StringEncoder = TypedEncoder<StringMatrix>
 
-public struct TabularEncoder<Values: DataMatrix> {
+public struct TypedEncoder<Values: DataMatrix> {
     private let options: WritingOptions
     
     public init(options: WritingOptions) {
@@ -23,7 +23,7 @@ public struct TabularEncoder<Values: DataMatrix> {
         header: [String]?,
         rowPermutation: [Int?]? = nil) throws -> [Values.VectorType]
     {
-        let encoder = TabularRowsEncoder<Values>(header: header, numRows: value.count, transform: .init(rowPermutation), options: options)
+        let encoder = DataEncoder<Values>(header: header, numRows: value.count, transform: .init(rowPermutation), options: options)
         try encoder.encode(value)
         return encoder.data.matrix.getVectors()
     }
@@ -32,13 +32,13 @@ public struct TabularEncoder<Values: DataMatrix> {
         _ value: T,
         header: [String]?) throws -> (data: [Values.VectorType], headerAndTypes: [HeaderAndType])
     {
-        let encoder = TabularRowsEncoder<Values>(header: header, numRows: value.count, transform: .map(nil), options: options)
+        let encoder = DataEncoder<Values>(header: header, numRows: value.count, transform: .map(nil), options: options)
         try encoder.encode(value)
         return (data: encoder.data.matrix.getVectors(), headerAndTypes: encoder.data.headerAndTypes!)
     }
 }
 
-fileprivate struct TabularRowsEncoder<Matrix: DataMatrix>: Encoder {
+fileprivate struct DataEncoder<Matrix: DataMatrix>: Encoder {
     fileprivate var data: VectorCollection<Matrix>
     var codingPath: [CodingKey] = []
     let userInfo: [CodingUserInfoKey : Any] = [:]
@@ -55,23 +55,23 @@ fileprivate struct TabularRowsEncoder<Matrix: DataMatrix>: Encoder {
     }
     
     func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedEncodingContainer<Key> {
-        KeyedEncodingContainer(TabularKeyedEncoding<Key, Matrix>(encoder: self))
+        KeyedEncodingContainer(DataKeyedEncoding<Key, Matrix>(encoder: self))
     }
     
     func unkeyedContainer() -> UnkeyedEncodingContainer {
-        TabularUnkeyedEncoding(encoder: self)
+        DataUnkeyedEncoding(encoder: self)
     }
     
     func singleValueContainer() -> SingleValueEncodingContainer {
-        TabularSingleValueEncoding(encoder: self)
+        DataSingleValueEncoding(encoder: self)
     }
 }
 
-fileprivate struct TabularKeyedEncoding<Key: CodingKey, Matrix: DataMatrix>: KeyedEncodingContainerProtocol {
-    private let encoder: TabularRowsEncoder<Matrix>
+fileprivate struct DataKeyedEncoding<Key: CodingKey, Matrix: DataMatrix>: KeyedEncodingContainerProtocol {
+    private let encoder: DataEncoder<Matrix>
     var codingPath: [CodingKey] = []
     
-    init(encoder: TabularRowsEncoder<Matrix>) { self.encoder = encoder }
+    init(encoder: DataEncoder<Matrix>) { self.encoder = encoder }
     
     var data: VectorCollection<Matrix> { encoder.data }
     
@@ -122,11 +122,11 @@ fileprivate struct TabularKeyedEncoding<Key: CodingKey, Matrix: DataMatrix>: Key
         keyedBy keyType: NestedKey.Type,
         forKey key: Key) -> KeyedEncodingContainer<NestedKey>
     {
-        KeyedEncodingContainer(TabularKeyedEncoding<NestedKey, Matrix>(encoder: encoder))
+        KeyedEncodingContainer(DataKeyedEncoding<NestedKey, Matrix>(encoder: encoder))
     }
     
     mutating func nestedUnkeyedContainer(forKey key: Key) -> UnkeyedEncodingContainer {
-        TabularUnkeyedEncoding(encoder: encoder)
+        DataUnkeyedEncoding(encoder: encoder)
     }
     
     mutating func superEncoder() -> Encoder { superEncoder(forKey: Key(stringValue: "super")!) }
@@ -134,12 +134,12 @@ fileprivate struct TabularKeyedEncoding<Key: CodingKey, Matrix: DataMatrix>: Key
     mutating func superEncoder(forKey key: Key) -> Encoder { encoder }
 }
 
-fileprivate struct TabularUnkeyedEncoding<Matrix: DataMatrix>: UnkeyedEncodingContainer {
-    private let encoder: TabularRowsEncoder<Matrix>
+fileprivate struct DataUnkeyedEncoding<Matrix: DataMatrix>: UnkeyedEncodingContainer {
+    private let encoder: DataEncoder<Matrix>
     var codingPath: [CodingKey] = []
     var count: Int { data.matrix.numRows }
 
-    init(encoder: TabularRowsEncoder<Matrix>) { self.encoder = encoder }
+    init(encoder: DataEncoder<Matrix>) { self.encoder = encoder }
     
     var data: VectorCollection<Matrix> { encoder.data }
     
@@ -174,11 +174,11 @@ fileprivate struct TabularUnkeyedEncoding<Matrix: DataMatrix>: UnkeyedEncodingCo
     mutating func nestedContainer<NestedKey: CodingKey>(
         keyedBy keyType: NestedKey.Type) -> KeyedEncodingContainer<NestedKey>
     {
-        KeyedEncodingContainer(TabularKeyedEncoding<NestedKey, Matrix>(encoder: encoder))
+        KeyedEncodingContainer(DataKeyedEncoding<NestedKey, Matrix>(encoder: encoder))
     }
 
     mutating func nestedUnkeyedContainer() -> UnkeyedEncodingContainer {
-        TabularUnkeyedEncoding<Matrix>(encoder: encoder)
+        DataUnkeyedEncoding<Matrix>(encoder: encoder)
     }
 
     mutating func superEncoder() -> Encoder {
@@ -186,11 +186,11 @@ fileprivate struct TabularUnkeyedEncoding<Matrix: DataMatrix>: UnkeyedEncodingCo
     }
 }
 
-fileprivate struct TabularSingleValueEncoding<Matrix: DataMatrix>: SingleValueEncodingContainer {
-    private let encoder: TabularRowsEncoder<Matrix>
+fileprivate struct DataSingleValueEncoding<Matrix: DataMatrix>: SingleValueEncodingContainer {
+    private let encoder: DataEncoder<Matrix>
     var codingPath: [CodingKey] = []
 
-    init(encoder: TabularRowsEncoder<Matrix>) { self.encoder = encoder }
+    init(encoder: DataEncoder<Matrix>) { self.encoder = encoder }
 
     var data: VectorCollection<Matrix> { encoder.data }
 

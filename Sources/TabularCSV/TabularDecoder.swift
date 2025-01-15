@@ -1,5 +1,5 @@
 //
-//  TabularCSVReader.swift
+//  TabularDecoder.swift
 //  TabularCSV
 //
 //  Created by Doug on 12/5/24.
@@ -40,7 +40,7 @@ enum FileOrData {
 //    func cancel() { }
 //}
 
-public struct TabularCSVReader {
+public struct TabularDecoder {
     //    public static func streamIn<T: Codable>(
     //        type: T.Type,
     //        header: [String],
@@ -158,9 +158,9 @@ public struct TabularCSVReader {
         let firstLittleBit: (data: Data, lines: [String])
         switch fileOrData {
         case .file(let filePath):
-            firstLittleBit = try TabularCSVReader.readLines(from: filePath, limit: numLinesToRead)
+            firstLittleBit = try TabularDecoder.readLines(from: filePath, limit: numLinesToRead)
         case .data(let dataValue):
-            firstLittleBit = try TabularCSVReader.convertLines(from: dataValue.data, limit: numLinesToRead)
+            firstLittleBit = try TabularDecoder.convertLines(from: dataValue.data, limit: numLinesToRead)
         }
         guard firstLittleBit.lines.count == numLinesToRead else {
             return ColumnInfo(header: [], permutation: nil, types: [:])

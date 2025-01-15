@@ -1,5 +1,5 @@
 //
-//  TabularDecoder.swift
+//  TypedDecoder.swift
 //  TabularCSV
 //
 //  Created by Doug on 12/5/24.
@@ -8,13 +8,11 @@
 
 import TabularData
 
-public typealias DataFrameDecoder = TabularDecoder<DataFrame.Rows, [AnyColumn]>
+public typealias DataFrameDecoder = TypedDecoder<DataFrame.Rows, [AnyColumn]>
 
-public typealias StringDecoder = TabularDecoder<[[String?]], StringColumns>
+public typealias StringDecoder = TypedDecoder<[[String?]], StringColumns>
 
-typealias StringRowsDecoder = TabularRowsDecoder<[[String?]], StringColumns>
-
-public struct TabularDecoder<Rows: DataRows, Columns: DataColumns> {
+public struct TypedDecoder<Rows: DataRows, Columns: DataColumns> {
     private let options: ReadingOptions
     
     public init(options: ReadingOptions) { self.options = options }
@@ -26,7 +24,7 @@ public struct TabularDecoder<Rows: DataRows, Columns: DataColumns> {
         rowPermutation: [Int?]?) throws -> T
     {
         let data = RowPermutation<Rows, Columns>(rows: rows, columns: columns, permutation: rowPermutation, options: options)
-        return try T(from: TabularRowsDecoder<Rows, Columns>(data: data))
+        return try T(from: DataDecoder<Rows, Columns>(data: data))
     }
     
     public func decodeWithMap<T: Decodable & Collection>(
@@ -37,7 +35,7 @@ public struct TabularDecoder<Rows: DataRows, Columns: DataColumns> {
     {
         let map = keyIndexMap(header)
         let data = RowMap<Rows, Columns>(rows: rows, columns: columns, map: map, options: options)
-        let decoder = TabularRowsDecoder<Rows, Columns>(data: data)
+        let decoder = DataDecoder<Rows, Columns>(data: data)
         return try T(from: decoder)
     }
 
@@ -53,7 +51,7 @@ public struct TabularDecoder<Rows: DataRows, Columns: DataColumns> {
 
         repeat {
             let data = RowTypes<Rows, Columns>(rows: rows, columns: columns, map: map, nilKeys: nilKeys, options: options)
-            let decoder = TabularRowsDecoder<Rows, Columns>(data: data)
+            let decoder = DataDecoder<Rows, Columns>(data: data)
             
             do {
                 let value = try T(from: decoder)
@@ -79,7 +77,7 @@ public struct TabularDecoder<Rows: DataRows, Columns: DataColumns> {
     }
 }
 
-struct TabularRowsDecoder<Rows: DataRows, Columns: DataColumns>: Decoder {
+struct DataDecoder<Rows: DataRows, Columns: DataColumns>: Decoder {
     fileprivate let data: RowCollection
     var codingPath: [CodingKey] = []
     let userInfo: [CodingUserInfoKey: Any] = [:]
@@ -88,33 +86,33 @@ struct TabularRowsDecoder<Rows: DataRows, Columns: DataColumns>: Decoder {
         self.data = data
     }
     
-    static func singleton(rows: Rows, columns: Columns, options: ReadingOptions) throws -> TabularRowsDecoder<Rows, Columns> {
+    static func singleton(rows: Rows, columns: Columns, options: ReadingOptions) throws -> DataDecoder<Rows, Columns> {
         let data = RowPermutation<Rows, Columns>(rows: rows, columns: columns, permutation: nil, options: options)
-        let decoder = TabularRowsDecoder<Rows, Columns>(data: data)
+        let decoder = DataDecoder<Rows, Columns>(data: data)
         try decoder.data.nextRow()
         return decoder
     }
         
-    func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedDecodingContainer<Key> {
-        KeyedDecodingContainer(TabularKeyedDecoding<Key, Rows, Columns>(decoder: self))
+    public func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedDecodingContainer<Key> {
+        KeyedDecodingContainer(DataKeyedDecoding<Key, Rows, Columns>(decoder: self))
     }
     
-    func unkeyedContainer() -> UnkeyedDecodingContainer {
-        TabularUnkeyedDecoding(decoder: self)
+    public func unkeyedContainer() -> UnkeyedDecodingContainer {
+        DataUnkeyedDecoding(decoder: self)
     }
     
-    func singleValueContainer() -> SingleValueDecodingContainer {
-        TabularSingleValueDecoding(decoder: self)
+    public func singleValueContainer() -> SingleValueDecodingContainer {
+        DataSingleValueDecoding(decoder: self)
     }
 }
 
-fileprivate struct TabularKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: DataColumns>: KeyedDecodingContainerProtocol {
-    private let decoder: TabularRowsDecoder<Rows, Columns>
+fileprivate struct DataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: DataColumns>: KeyedDecodingContainerProtocol {
+    private let decoder: DataDecoder<Rows, Columns>
     var codingPath: [CodingKey] = []
     var allKeys: [Key] = []
     func contains(_ key: Key) -> Bool { true }
     
-    init(decoder: TabularRowsDecoder<Rows, Columns>) { self.decoder = decoder }
+    init(decoder: DataDecoder<Rows, Columns>) { self.decoder = decoder }
     
     var data: RowCollection { decoder.data }
 
@@ -184,14 +182,14 @@ fileprivate struct TabularKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns:
     }
 }
 
-fileprivate struct TabularUnkeyedDecoding<Rows: DataRows, Columns: DataColumns>: UnkeyedDecodingContainer {
-    private let decoder: TabularRowsDecoder<Rows, Columns>
+fileprivate struct DataUnkeyedDecoding<Rows: DataRows, Columns: DataColumns>: UnkeyedDecodingContainer {
+    private let decoder: DataDecoder<Rows, Columns>
     var codingPath: [CodingKey] = []
     var count: Int? { return data.rowCount }
     var isAtEnd: Bool { return data.currentRowIndex >= data.rowCount }
     var currentIndex: Int { return data.currentRowIndex }
     
-    init(decoder: TabularRowsDecoder<Rows, Columns>) { self.decoder = decoder }
+    init(decoder: DataDecoder<Rows, Columns>) { self.decoder = decoder }
     
     var data: RowCollection { decoder.data }
     
@@ -262,7 +260,7 @@ fileprivate struct TabularUnkeyedDecoding<Rows: DataRows, Columns: DataColumns>:
     
     mutating func nestedContainer<NestedKey: CodingKey>(keyedBy keyType: NestedKey.Type) throws -> KeyedDecodingContainer<NestedKey> {
         try checkEnd()
-        return KeyedDecodingContainer(TabularKeyedDecoding<NestedKey, Rows, Columns>(decoder: decoder))
+        return KeyedDecodingContainer(DataKeyedDecoding<NestedKey, Rows, Columns>(decoder: decoder))
     }
     
     mutating func nestedUnkeyedContainer() throws -> UnkeyedDecodingContainer {
@@ -274,11 +272,11 @@ fileprivate struct TabularUnkeyedDecoding<Rows: DataRows, Columns: DataColumns>:
     }
 }
 
-fileprivate struct TabularSingleValueDecoding<Rows: DataRows, Columns: DataColumns>: SingleValueDecodingContainer {
-    private let decoder: TabularRowsDecoder<Rows, Columns>
+fileprivate struct DataSingleValueDecoding<Rows: DataRows, Columns: DataColumns>: SingleValueDecodingContainer {
+    private let decoder: DataDecoder<Rows, Columns>
     var codingPath: [CodingKey] = []
 
-    init(decoder: TabularRowsDecoder<Rows, Columns>) {
+    init(decoder: DataDecoder<Rows, Columns>) {
         self.decoder = decoder
         decoder.data.singleValueContainer()
     }

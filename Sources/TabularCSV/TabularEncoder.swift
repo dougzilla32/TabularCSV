@@ -1,5 +1,5 @@
 //
-//  TabularCSVWriter.swift
+//  TabularEncoder.swift
 //  TabularCSV
 //
 //  Created by Doug on 12/19/24.
@@ -8,7 +8,7 @@
 import Foundation
 import TabularData
 
-public struct TabularCSVWriter {
+public struct TabularEncoder {
     private let options: WritingOptions
 
     public init(options: WritingOptions = .init()) {
