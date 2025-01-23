@@ -117,7 +117,7 @@ final class VectorCollection<Matrix: DataMatrix> {
     private let transform: RowTransform
     private let options: WritingOptions
     var currentColumnIndex = 0
-    private(set) var headerAndTypes: [HeaderAndType]?
+    private(set) var fields: MutableOrderedSet<CSVField>?
 
     init(header: [String]?, numRows: Int, transform: RowTransform, options: WritingOptions) {
         self.matrix = Matrix(header: header, numRows: numRows, transform: transform)
@@ -125,7 +125,7 @@ final class VectorCollection<Matrix: DataMatrix> {
         self.options = options
 
         if case .map = transform {
-            headerAndTypes = []
+            fields = MutableOrderedSet<CSVField>()
         }
     }
     
@@ -151,14 +151,14 @@ final class VectorCollection<Matrix: DataMatrix> {
             matrix.encode(value, index: index)
         }
         if let key {
-            headerAndTypes?.append(.init(name: key.stringValue, type: T.csvType))
+            fields?.add(.init(name: key.stringValue, type: T.csvType))
         }
         currentColumnIndex += 1
     }
     
     func encodeNext<T: Encodable>(_ value: T, forKey key: CodingKey? = nil, encoder: Encoder) throws {
         if let key {
-            headerAndTypes?.append(.init(name: key.stringValue, type: .string))
+            fields?.add(.init(name: key.stringValue, type: .string))
         }
         if let formatter = options.formatterForType(T.self) {
             try formatter(value).encode(to: encoder)
@@ -169,7 +169,7 @@ final class VectorCollection<Matrix: DataMatrix> {
 
     func encodeNextIfPresent<T: Encodable>(_ value: T?, forKey key: CodingKey? = nil, encoder: Encoder) throws {
         if let key {
-            headerAndTypes?.append(.init(name: key.stringValue, type: .string))
+            fields?.add(.init(name: key.stringValue, type: .string))
         }
         if let value, let formatter = options.formatterForType(T.self) {
             try formatter(value).encode(to: encoder)

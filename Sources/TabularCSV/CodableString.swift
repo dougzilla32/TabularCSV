@@ -169,26 +169,6 @@ public extension KeyedEncodingContainer {
     }
 }
 
-// MARK: - Immutable OrderedSet used by boolean coders
-
-public struct OrderedSet<T: Hashable & Sendable>: ExpressibleByArrayLiteral, Sendable {
-    private let array: [T]
-    private let set: Set<T>
-
-    public init(arrayLiteral elements: T...) {
-        array = elements
-        set = Set(elements)
-    }
-
-    public var count: Int { array.count }
-
-    public var elements: [T] { array }
-
-    public func contains(_ element: T) -> Bool { set.contains(element) }
-
-    public subscript(index: Int) -> T { array[index] }
-}
-
 // MARK: - Coders for booleans
 
 public protocol CodableBool: CodableString & Hashable where ValueType == Bool {

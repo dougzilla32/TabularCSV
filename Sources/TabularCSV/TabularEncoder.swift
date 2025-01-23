@@ -68,7 +68,7 @@ public struct TabularEncoder {
     {
         let typeEncoder = StringEncoder(options: options)
         let result = try typeEncoder.encodeWithHeaderAndTypes([value.first], header: nil)
-        let encodedHeader = result.headerAndTypes.map(\.name)
+        let encodedHeader = result.fields.all().map(\.name)
 
         let permutation: [Int?]?
         if let overrideHeader {
@@ -80,8 +80,9 @@ public struct TabularEncoder {
         return (permutation: permutation, encodedHeader: encodedHeader)
     }
 
-    private func createHeaderPermutation(encodedHeader: [String], overrideHeader: [String]) throws -> [Int?] {
+    private func createHeaderPermutation(encodedHeader: [String], overrideHeader: [String]) throws -> [Int?]? {
         let overrideHeaderMap = Dictionary(uniqueKeysWithValues: overrideHeader.enumerated().map { ($1, $0) })
-        return encodedHeader.map { overrideHeaderMap[$0] }
+        let permutation = encodedHeader.map { overrideHeaderMap[$0] }
+        return permutation.enumerated().allSatisfy { $0.element == $0.offset } ? nil :  permutation
     }
 }

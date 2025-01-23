@@ -30,11 +30,11 @@ public struct TypedEncoder<Values: DataMatrix> {
     
     func encodeWithHeaderAndTypes<T: Encodable & Collection>(
         _ value: T,
-        header: [String]?) throws -> (data: [Values.VectorType], headerAndTypes: [HeaderAndType])
+        header: [String]?) throws -> (data: [Values.VectorType], fields: OrderedSet<CSVField>)
     {
         let encoder = DataEncoder<Values>(header: header, numRows: value.count, transform: .map(nil), options: options)
         try encoder.encode(value)
-        return (data: encoder.data.matrix.getVectors(), headerAndTypes: encoder.data.headerAndTypes!)
+        return (data: encoder.data.matrix.getVectors(), fields: encoder.data.fields!.immutableCopy())
     }
 }
 

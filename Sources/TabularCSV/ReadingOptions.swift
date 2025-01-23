@@ -141,15 +141,14 @@ public struct ReadingOptions {
         return (readingOptions: options, csvReadingOptions: options.csvReadingOptions)
     }
     
-    func parserForType<T>(_ type: T.Type) -> ((String) -> Any)? {
-        switch type {
-        case is Data.Type:
-            return dataParser
-        case is Decimal.Type:
-            return decimalParser
-        case is URL.Type:
-            return urlParser
-        default:
+    func parserForType<T>(_ type: T.Type) -> ((String) -> T?)? {
+        if type == Data.self {
+            return dataParser as? (String) -> T?
+        } else if type == Decimal.self {
+            return decimalParser as? (String) -> T?
+        } else if type == URL.self {
+            return urlParser as? (String) -> T?
+        } else {
             return nil
         }
     }

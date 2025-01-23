@@ -14,13 +14,13 @@ public struct DataDecodingError: Error, CustomStringConvertible, CustomDebugStri
     public var description: String {
         switch error {
         case .typeMismatch(_, let context):
-            return cleanQuotes(context.debugDescription)
+            return context.debugDescription
         case .valueNotFound(_, let context):
-            return cleanQuotes(context.debugDescription)
+            return context.debugDescription
         case .keyNotFound(_, let context):
-            return cleanQuotes(context.debugDescription)
+            return context.debugDescription
         case .dataCorrupted(let context):
-            return cleanQuotes(context.debugDescription)
+            return context.debugDescription
         default:
             return error.localizedDescription
         }
@@ -29,13 +29,13 @@ public struct DataDecodingError: Error, CustomStringConvertible, CustomDebugStri
     public var debugDescription: String {
         switch error {
         case .typeMismatch(let anyType, let context):
-            return "typeMismatch(type: '\(anyType)', codingPath: '\(name(context.codingPath))', debugDescription: \(cleanQuotes(context.debugDescription)))"
+            return "typeMismatch(type: '\(anyType)', codingPath: '\(name(context.codingPath))', debugDescription: \(context.debugDescription))"
         case .valueNotFound(let anyType, let context):
-            return "valueNotFound(type: '\(anyType)', codingPath: '\(name(context.codingPath))', debugDescription: \(cleanQuotes(context.debugDescription)))"
+            return "valueNotFound(type: '\(anyType)', codingPath: '\(name(context.codingPath))', debugDescription: \(context.debugDescription))"
         case .keyNotFound(let anyKey, let context):
-            return "keyNotFound(key: '\(anyKey)', codingPath: '\(name(context.codingPath))', debugDescription: \(cleanQuotes(context.debugDescription)))"
+            return "keyNotFound(key: '\(anyKey)', codingPath: '\(name(context.codingPath))', debugDescription: \(context.debugDescription))"
         case .dataCorrupted(let context):
-            return "dataCorrupted(codingPath: '\(name(context.codingPath))', debugDescription: \(cleanQuotes(context.debugDescription)))"
+            return "dataCorrupted(codingPath: '\(name(context.codingPath))', debugDescription: \(context.debugDescription))"
         default:
             return error.localizedDescription
         }
@@ -43,22 +43,6 @@ public struct DataDecodingError: Error, CustomStringConvertible, CustomDebugStri
     
     private func name(_ codingPath: [CodingKey]) -> String {
         return codingPath.map(\.stringValue).joined(separator: ".")
-    }
-    
-    private func cleanQuotes(_ string: String) -> String {
-        return string.replacingOccurrences(of: "'", with: "'")
-    }
-
-    public func withKey(_ key: CodingKey?, rowNumber: Int) -> DataDecodingError {
-        guard let key else { return self }
-        switch error {
-        case .typeMismatch(let anyType, _):
-            return DataDecodingError.typeMismatch(anyType, forKey: key, rowNumber: rowNumber)
-        case .valueNotFound(let anyType, _):
-            return DataDecodingError.valueNotFound(anyType, forKey: key, rowNumber: rowNumber)
-        default:
-            return self
-        }
     }
     
     public static func typeMismatch(_ type: any Any.Type, _ context: DecodingError.Context) -> DataDecodingError {
@@ -89,7 +73,7 @@ public struct DataDecodingError: Error, CustomStringConvertible, CustomDebugStri
         DataDecodingError(error: DecodingError.dataCorruptedError(in: container, debugDescription: debugDescription))
     }
     
-    static func typeMismatch<T>(_ type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int) -> DataDecodingError {
+    static func typeMismatch<T>(_ type: T.Type, forKey key: CodingKey, rowNumber: Int) -> DataDecodingError {
         DataDecodingError.valueNotFound(T.self, context(description: "Value does not match expected type '\(type)'", forKey: key, rowNumber: rowNumber))
     }
     
@@ -97,36 +81,24 @@ public struct DataDecodingError: Error, CustomStringConvertible, CustomDebugStri
         DataDecodingError.valueNotFound(T.self, context(description: "Value of type '\(type)' not available", forKey: key, rowNumber: rowNumber))
     }
     
-    static func valueAlreadyDecoded<T>(_ type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int) -> DataDecodingError {
-        DataDecodingError.dataCorrupted(context(description: "Value of type '\(type)' already decoded", forKey: key, rowNumber: rowNumber))
+    static func headerIsNeeded(error: Error) -> DataDecodingError {
+        DataDecodingError.dataCorrupted(context(description: "Header must be specified when using an irregular decodable type: \(error)", rowNumber: -1))
     }
     
-    static func incorrectNilSequence<T>(_ type: T.Type, nilKey: CodingKey, currentKey: CodingKey?, rowNumber: Int) -> DataDecodingError {
-        DataDecodingError.dataCorrupted(context(description: "decodeNil(forKey: '\(nilKey.stringValue)') and decodeNil(forKey: '\(currentKey?.stringValue ?? "nil")') are required to match for the sequence decodeNil(forKey) -> decodeNil(forKey), for type '\(type)'", forKey: nil, rowNumber: rowNumber))
-    }
-    
-    static func incorrectSequence<T>(_ type: T.Type, nilKey: CodingKey, currentKey: CodingKey?, rowNumber: Int) -> DataDecodingError {
-        DataDecodingError.dataCorrupted(context(description: "decodeNil(forKey: '\(nilKey.stringValue)') and decode(type, forKey: '\(currentKey?.stringValue ?? "nil")') are required to match for the sequence decodeNil(forKey) -> decode(type, forKey), for type '\(type)'", forKey: nil, rowNumber: rowNumber))
-    }
-    
-    static func duplicateSequence<T>(_ type: T.Type, nilKey: CodingKey, currentKey: CodingKey?, rowNumber: Int) -> DataDecodingError {
-        DataDecodingError.dataCorrupted(context(description: "Too many calls to decode(type, forKey: '\(currentKey?.stringValue ?? "nil")'): decodeNil(forKey: '\(nilKey.stringValue)') and decode(type, forKey: '\(currentKey?.stringValue ?? "nil")') must be paired correctly for the sequence decodeNil(forKey) -> decode(type, forKey), for type '\(type)'", forKey: nil, rowNumber: rowNumber))
-    }
-    
-    static func singleValueDecoding(rowNumber: Int) -> DataDecodingError {
-        DataDecodingError.dataCorrupted(context(description: "Single value decoding error", rowNumber: rowNumber))
+    static func decoder(_ message: String, rowNumber: Int) -> DataDecodingError {
+        DataDecodingError.dataCorrupted(context(description: message, forKey: nil, rowNumber: rowNumber))
     }
     
     static func dataCorrupted(string: String, forKey key: CodingKey? = nil, rowNumber: Int) -> DataDecodingError {
         DataDecodingError.dataCorrupted(context(description: "Cannot decode '\(string)'", forKey: key, rowNumber: rowNumber))
     }
     
-    static func isAtEnd(rowNumber: Int) -> DataDecodingError {
-        DataDecodingError.dataCorrupted(context(description: "No more rows available", rowNumber: rowNumber))
-    }
-    
     static func nestedContainer(forKey key: CodingKey? = nil, rowNumber: Int) -> DataDecodingError {
         DataDecodingError.dataCorrupted(context(description: "Cannot create nested container", forKey: key, rowNumber: rowNumber))
+    }
+    
+    static func superDecoder(forKey key: CodingKey? = nil, rowNumber: Int) -> DataDecodingError {
+        DataDecodingError.dataCorrupted(context(description: "Cannot create super decoder", forKey: key, rowNumber: rowNumber))
     }
     
     static func unkeyedContainer(rowNumber: Int) -> DataDecodingError {

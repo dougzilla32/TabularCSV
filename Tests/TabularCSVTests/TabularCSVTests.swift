@@ -95,9 +95,8 @@ func decodeEncode<T: Codable>(
 {
     do {
         let inputData = input.data(using: .utf8)!
-        let decoded = try TabularCSVReader(options: readingOptions).read([T].self, csvData: inputData, hasHeaderRow: hasHeaderRow)
-//        print(decoded.header)
-        let encoded = try TabularCSVWriter(options: writingOptions).csvRepresentation(
+        let decoded = try TabularDecoder(options: readingOptions).read([T].self, csvData: inputData, hasHeaderRow: hasHeaderRow)
+        let encoded = try TabularEncoder(options: writingOptions).csvRepresentation(
             decoded.rows,
             includesHeader: includesHeader,
             overrideHeader: encodeWithHeader ? decoded.header : nil)
@@ -105,7 +104,7 @@ func decodeEncode<T: Codable>(
         let actual = String(data: encoded, encoding: .utf8)!
         #expect(expected == actual)
         #expect(expectedException == nil)
-    } catch let decodingError as CSVDecodingError {
+    } catch let decodingError as DataDecodingError {
         if let expectedException {
             #expect(expectedException == decodingError.description)
         } else {
@@ -186,8 +185,7 @@ func decodeEncode<T: Codable>(
     
     try decodeEncode(
         RepeatPerson.self,
-        input: PersonCSV,
-        expectedException: "Too many calls to decode(type, forKey: 'nationality'): decodeNil(forKey: 'nationality') and decode(type, forKey: 'nationality') must be paired correctly for the sequence decodeNil(forKey) -> decode(type, forKey), for type 'String' at row 2.")
+        input: PersonCSV)
 }
 
 @Test func testDecodeNilWithBool() async throws {
@@ -356,8 +354,7 @@ struct America: CodableString {
     try decodeEncode(
         TallAmericans.self,
         input: "name,tall,america\nAlice,yes,\nBob,,US\n",
-        expectedException: "decodeNil(forKey: 'tall') and decode(type, forKey: 'america') are required to match for the sequence decodeNil(forKey) -> decode(type, forKey), for type 'String' at row 2.")
-
+        expectedException: "Value of type 'String' not available for key 'america' at row 2.")
 }
 
 
@@ -473,8 +470,7 @@ struct Content: Codable {
     
     try decodeEncode(
         RepeatPerson.self,
-        input: PersonCSV,
-        expectedException: "decodeNil(forKey: 'nationality') and decode(type, forKey: 'tall') are required to match for the sequence decodeNil(forKey) -> decode(type, forKey), for type 'String' at row 2.")
+        input: PersonCSV)
 }
 
 @Test func testPersonWithoutHeight() async throws {
@@ -562,7 +558,7 @@ struct Content: Codable {
     try decodeEncode(
         Person.self,
         input: invalidDataTypeCSV,
-        expectedException: "Failed to parse cell at row 1 column 1 as integer. Cell contents are 'abc'."
+        expectedException: "Cannot decode 'abc' for key 'age' at row 2."
     )
 }
 
@@ -727,7 +723,7 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
     try decodeEncode(
         Pet.self,
         input: invalidAgeCSV,
-        expectedException: "Failed to parse cell at row 1 column 1 as integer. Cell contents are 'five'."
+        expectedException: "Cannot decode 'five' for key 'Age' at row 2."
     )
 }
 
@@ -755,4 +751,46 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
         input: invalidFriendlyCSV,
         expectedException: "Cannot decode 'maybe' for key 'Friendly' at row 2."
     )
+}
+
+@Test func typePerformance() async throws {
+    struct AllTypes: Codable {
+        let stringValue: String
+        let boolValue: Bool
+        let doubleValue: Double
+        let floatValue: Float
+        let intValue: Int
+        let int32Value: Int32
+        let int64Value: Int64
+        let uIntValue: UInt
+        let uInt32Value: UInt32
+        let uInt64Value: UInt64
+    }
+    
+    let AllTypesHeaderArray = ["stringValue", "boolValue", "doubleValue", "floatValue", "intValue", "int32Value", "int64Value", "uIntValue", "uInt32Value", "uInt64Value"]
+    let AllTypesHeader = """
+            stringValue,boolValue,doubleValue,floatValue,intValue,int32Value,int64Value,uIntValue,uInt32Value,uInt64Value
+            """ + "\n"
+    let AllTypesData = """
+            Hello World!,true,3.14159,3.14159,42,42,42,42,42,42
+            """
+    
+    let largeData = (0..<2).map { _ in AllTypesData }.joined(separator: "\n") + "\n"
+    
+//    let inputData = (AllTypesHeader + largeData).data(using: .utf8)!
+    let inputData = largeData.data(using: .utf8)!
+//    let decoded = try TabularDecoder().read([AllTypes].self, csvData: inputData, hasHeaderRow: true)
+    let decoded = try TabularDecoder().read([AllTypes].self, csvData: inputData, hasHeaderRow: false)
+    let encoded = try TabularEncoder().csvRepresentation(
+        decoded.rows,
+        includesHeader: true,
+        overrideHeader: [])
+
+    let expected = AllTypesHeader + largeData
+    let actual = String(data: encoded, encoding: .utf8)!
+    #expect(expected == actual)
+
+//    try decodeEncode(
+//        AllTypes.self,
+//        input: allTypesHeader + largeData)
 }

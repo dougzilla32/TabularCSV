@@ -9,14 +9,6 @@
 import Foundation
 import TabularData
 
-enum FileError: Error {
-    case open
-}
-
-enum DataError: Error {
-    case decoding
-}
-
 class DataValue {
     var data: Data
     
@@ -133,18 +125,12 @@ public struct TabularDecoder {
         }
 
         let dataFrameDecoder = DataFrameDecoder(options: options)
-        let rows: T
-        if options.useKeyMap {
-            rows = try dataFrameDecoder.decodeWithMap(type, rows: dataFrame.rows, columns: dataFrame.columns, header: columnInfo.header)
-        } else {
-            rows = try dataFrameDecoder.decode(type, rows: dataFrame.rows, columns: dataFrame.columns, rowPermutation: columnInfo.permutation)
-        }
+        let rows = try dataFrameDecoder.decode(type, rows: dataFrame.rows, columns: dataFrame.columns, header: columnInfo.header)
         return (rows: rows, header: overrideHeader ?? dataFrame.columns.map(\.name))
     }
     
     struct ColumnInfo {
-        let header: [String]?
-        let permutation: [Int?]?
+        let header: [String]
         let types: [String: CSVType]
     }
     
@@ -154,58 +140,55 @@ public struct TabularDecoder {
         hasHeaderRow: Bool,
         overrideHeader: [String]?) throws -> ColumnInfo
     {
-        let numLinesToRead = hasHeaderRow ? 2 : 1
-        let firstLittleBit: (data: Data, lines: [String])
-        switch fileOrData {
-        case .file(let filePath):
-            firstLittleBit = try TabularDecoder.readLines(from: filePath, limit: numLinesToRead)
-        case .data(let dataValue):
-            firstLittleBit = try TabularDecoder.convertLines(from: dataValue.data, limit: numLinesToRead)
+        let firstPart: (data: Data, lines: [String])
+        do {
+            let numLinesToRead = hasHeaderRow ? 2 : 1
+            switch fileOrData {
+            case .file(let filePath):
+                firstPart = try TabularDecoder.readLines(from: filePath, limit: numLinesToRead)
+            case .data(let dataValue):
+                firstPart = try TabularDecoder.convertLines(from: dataValue.data, limit: numLinesToRead)
+            }
+            guard firstPart.lines.count == numLinesToRead else {
+                return ColumnInfo(header: [], types: [:])
+            }
         }
-        guard firstLittleBit.lines.count == numLinesToRead else {
-            return ColumnInfo(header: [], permutation: nil, types: [:])
-        }
-        
-        let stringTypes = Dictionary(uniqueKeysWithValues: (overrideHeader ?? []).map { ($0, CSVType.string) })
+
         let headerOptions = options.hasHeaderRow(hasHeaderRow)
-        let dataFrame = try DataFrame(csvData: firstLittleBit.data, types: stringTypes, options: headerOptions.csvReadingOptions)
+        let dataFrame = try DataFrame(csvData: firstPart.data, options: headerOptions.csvReadingOptions)
+        let csvHeader = hasHeaderRow ? dataFrame.columns.map(\.name) : nil
+
+        let types: [String: CSVType]
+        do {
+            let typesHeader = csvHeader ?? (0..<dataFrame.rows[0].count).map { "Column \($0)" }
+            types = Dictionary(uniqueKeysWithValues: typesHeader.map { ($0, .string) })
+        }
 
         let header = overrideHeader ?? (hasHeaderRow ? dataFrame.columns.map(\.name) : nil)
-        
-        if options.useKeyMap {
-            return ColumnInfo(header: header, permutation: nil, types: stringTypes)
+        if let header {
+            return ColumnInfo(header: header, types: types)
         }
-
+        
+        let typeDecoder = StringDecoder(options: options)
         let row: [String?] = dataFrame.rows[0].map {
             if let value = $0 { String(describing: value) } else { nil }
         }
-        let typeDecoder = StringDecoder(options: options)
-        let result = try typeDecoder.decodeTypes(type, rows: [row], columns: StringColumns(), header: header)
-
-        let permutation: [Int?]?
-        if let header {
-            permutation = try createHeaderPermutation(decodedHeader: result.headerAndTypes.map(\.name), csvHeader: header)
-        } else {
-            permutation = nil
+        let typeDecoderResult: (value: T, fields: OrderedSet<CSVField>)
+        do {
+            typeDecoderResult = try typeDecoder.decodeTypes(type, rows: [row], columns: StringColumns(), header: csvHeader)
+        } catch {
+            throw DataDecodingError.headerIsNeeded(error: error)
         }
-        let typeMap = Dictionary(uniqueKeysWithValues: result.headerAndTypes.map { ($0.name, $0.type) })
-        return ColumnInfo(header: header, permutation: permutation, types: typeMap)
-    }
-    
-    private func createHeaderPermutation(decodedHeader: [String], csvHeader: [String]) throws -> [Int?] {
-        let csvHeaderMap = Dictionary(uniqueKeysWithValues: csvHeader.enumerated().map { ($1, $0) })
-        return decodedHeader.map { csvHeaderMap[$0] }
+        
+        return ColumnInfo(
+            header: typeDecoderResult.fields.all().map(\.name),
+            types: types)
     }
 
-// TODO: compare performance: use permutation array VS reordering the DataFrame rows without permutation
-//    private static func reorder(row: [String], headersIndexMap: [Int?]?) -> [String?] {
-//        guard let headersIndexMap else { return row }
-//
-//        return headersIndexMap.map { index in
-//            guard let index = index, index < row.count else { return nil }
-//            return row[index]
-//        }
-//    }
+
+    enum FileError: Error {
+        case open
+    }
 
     private static func readLines(from filePath: String, limit: Int) throws -> (data: Data, lines: [String]) {
         var string = ""
@@ -237,6 +220,10 @@ public struct TabularDecoder {
         return (data: string.data(using: .utf8)!, lines: lines)
     }
     
+    enum DataError: Error {
+        case decoding
+    }
+
     private static func convertLines(from data: Data, limit: Int, encoding: String.Encoding = .utf8) throws -> (data: Data, lines: [String]) {
         // Buffer to hold the partial result
         var lines: [String] = []
