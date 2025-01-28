@@ -95,8 +95,6 @@ public struct ReadingOptions {
     
     public var nilAsEmptyString: Bool = false
     
-    public var useKeyMap: Bool = false
-    
     public init(
         nilEncodings: Set<String>   = [ "", "#N/A", "#N/A N/A", "#NA", "N/A", "NA", "NULL", "n/a", "null" ],
         trueEncodings: Set<String>  = [ "1", "True", "TRUE", "true" ],
@@ -111,8 +109,7 @@ public struct ReadingOptions {
         dataParser: ((String) -> Data?)? = nil,
         decimalParser: ((String) -> Decimal?)? = nil,
         urlParser: ((String) -> URL?)? = nil,
-        nilAsEmptyString: Bool = false,
-        useKeyMap: Bool = false
+        nilAsEmptyString: Bool = false
     ) {
         csvReadingOptions = .init(
             hasHeaderRow: true,
@@ -130,7 +127,6 @@ public struct ReadingOptions {
         self.decimalParser = decimalParser
         self.urlParser = urlParser
         self.nilAsEmptyString = nilAsEmptyString
-        self.useKeyMap = useKeyMap
     }
     
     public init() { csvReadingOptions = .init() }

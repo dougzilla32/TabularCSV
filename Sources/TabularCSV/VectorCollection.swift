@@ -11,82 +11,69 @@ import TabularData
 public protocol DataMatrix {
     associatedtype VectorType
     
+    var vectors: [VectorType] { get }
+    
     var numRows: Int { get }
     
-    init(header: [String]?, numRows: Int, transform: RowTransform)
+    init(header: OrderedDictionary<String, Int>?, numRows: Int)
     
     mutating func nextRow()
     
     mutating func encode<T: CSVPrimitive>(_ value: T?, index: Int)
-    
-    func getVectors() -> [VectorType]
 }
 
 public struct AnyColumnMatrix: DataMatrix {
-    public typealias VectorType = AnyColumn
+    public typealias VectorType = Column<String>
     
-    private var vectors: [VectorType?]
-    private let header: [String]?
+    public private(set) var vectors: [VectorType]
+    private var currentRow: Int
+    private let header: OrderedDictionary<String, Int>?
     public let numRows: Int
 
-    public init(header: [String]?, numRows: Int, transform: RowTransform) {
-        self.vectors = Array(repeating: nil, count: header?.count ?? 0)
+    public init(header: OrderedDictionary<String, Int>?, numRows: Int) {
+        self.vectors = []
+        self.currentRow = -1
         self.header = header
         self.numRows = numRows
         
-        if case .permutation(let permutation) = transform {
-            for index in 0..<permutation.count {
-                if permutation[index] == nil {
-                    var column = Column<String>(name: header?[index] ?? "Column \(index)", capacity: numRows)
-                    column.append(contentsOf: Array<String>(repeating: "", count: numRows))
-                    ensureMinimumLength(index: index)
-                    vectors[index] = column.eraseToAnyColumn()
-                }
+        if let headerNames = header?.orderedKeys {
+            for index in 0..<headerNames.count {
+                var column = Column<String>(name: headerNames[index], capacity: numRows)
+                column.append(contentsOf: Array<String>(repeating: "", count: numRows))
+                vectors.append(column)
             }
         }
     }
     
-    public mutating func nextRow() { }
+    public mutating func nextRow() {
+        currentRow += 1
+    }
     
     public mutating func encode<T: CSVPrimitive>(_ value: T?, index: Int) {
-        ensureMinimumLength(index: index)
-        if vectors[index] == nil {
-            vectors[index] = Column<T>(name: header?[index] ?? "Column \(index)", capacity: numRows).eraseToAnyColumn()
-        }
-        vectors[index]!.append(value)
-    }
-    
-    private mutating func ensureMinimumLength(index: Int) {
-        let count = vectors.count
-        if index >= count {
-            vectors.append(contentsOf: Array(repeating: nil, count: index - count + 1))
+        let string = value.map { String($0) } ?? ""
+        if header != nil {
+            vectors[index][currentRow] = string
+        } else {
+            ensureMinimumSize(index + 1)
+            vectors[index].append(string)
         }
     }
     
-    public func getVectors() -> [VectorType] {
-        var result: [VectorType] = []
-        for index in 0..<vectors.count {
-            if let vector = vectors[index] {
-                result.append(vector)
-            } else {
-                result.append(Column<String>(
-                    name: header?[index] ?? "Column \(index)",
-                    contents: Array<String>(repeating: "", count: numRows)
-                ).eraseToAnyColumn())
-            }
+    private mutating func ensureMinimumSize(_ count: Int) {
+        for index in vectors.count..<count {
+            vectors.append(Column<String>(name: "Column \(index)", capacity: numRows))
         }
-        return result
     }
 }
 
 public struct StringMatrix: DataMatrix {
     public typealias VectorType = [String?]
     
-    private var vectors: [VectorType]
-    private let header: [String]?
+    public private(set) var vectors: [VectorType]
+    private let header: OrderedDictionary<String, Int>?
     public let numRows: Int
     
-    public init(header: [String]?, numRows: Int, transform: RowTransform) {
+    public init(header: OrderedDictionary<String, Int>?, numRows: Int) {
         self.vectors = []
         self.header = header
         self.numRows = numRows
@@ -106,75 +93,6 @@ public struct StringMatrix: DataMatrix {
         let count = vectors[vectors.count - 1].count
         if index >= count {
             vectors[vectors.count - 1].append(contentsOf: Array(repeating: nil, count: index - count + 1))
-        }
-    }
-    
-    public func getVectors() -> [VectorType] { vectors }
-}
-
-final class VectorCollection<Matrix: DataMatrix> {
-    private(set) var matrix: Matrix
-    private let transform: RowTransform
-    private let options: WritingOptions
-    var currentColumnIndex = 0
-    private(set) var fields: MutableOrderedSet<CSVField>?
-
-    init(header: [String]?, numRows: Int, transform: RowTransform, options: WritingOptions) {
-        self.matrix = Matrix(header: header, numRows: numRows, transform: transform)
-        self.transform = transform
-        self.options = options
-
-        if case .map = transform {
-            fields = MutableOrderedSet<CSVField>()
-        }
-    }
-    
-    func nextRow() {
-        matrix.nextRow()
-        currentColumnIndex = 0
-    }
-    
-    func encodeNext<T: CSVPrimitive>(_ value: T, forKey key: CodingKey? = nil) {
-        encodeNextIfPresent(value, forKey: key)
-    }
-    
-    func encodeNextIfPresent<T: CSVPrimitive>(_ value: T?, forKey key: CodingKey? = nil) {
-        let index: Int?
-        switch transform {
-        case .permutation(let permutation):
-            index = permutation[currentColumnIndex]
-        default:
-            index = currentColumnIndex
-        }
-
-        if let index {
-            matrix.encode(value, index: index)
-        }
-        if let key {
-            fields?.add(.init(name: key.stringValue, type: T.csvType))
-        }
-        currentColumnIndex += 1
-    }
-    
-    func encodeNext<T: Encodable>(_ value: T, forKey key: CodingKey? = nil, encoder: Encoder) throws {
-        if let key {
-            fields?.add(.init(name: key.stringValue, type: .string))
-        }
-        if let formatter = options.formatterForType(T.self) {
-            try formatter(value).encode(to: encoder)
-        } else {
-            try value.encode(to: encoder)
-        }
-    }
-
-    func encodeNextIfPresent<T: Encodable>(_ value: T?, forKey key: CodingKey? = nil, encoder: Encoder) throws {
-        if let key {
-            fields?.add(.init(name: key.stringValue, type: .string))
-        }
-        if let value, let formatter = options.formatterForType(T.self) {
-            try formatter(value).encode(to: encoder)
-        } else {
-            try value.encode(to: encoder)
         }
     }
 }

@@ -89,17 +89,19 @@ func decodeEncode<T: Codable>(
     output: String? = nil,
     encodeWithHeader: Bool = true,
     includesHeader: Bool = true,
+    overrideDecodeHeader: [String]? = nil,
+    overrideEncodeHeader: [String]? = nil,
     expectedException: String? = nil,
     readingOptions: ReadingOptions = .init(),
     writingOptions: WritingOptions = .init()) throws
 {
     do {
         let inputData = input.data(using: .utf8)!
-        let decoded = try TabularDecoder(options: readingOptions).read([T].self, csvData: inputData, hasHeaderRow: hasHeaderRow)
+        let decoded = try TabularDecoder(options: readingOptions).read([T].self, csvData: inputData, hasHeaderRow: hasHeaderRow, overrideHeader: overrideDecodeHeader)
         let encoded = try TabularEncoder(options: writingOptions).csvRepresentation(
             decoded.rows,
             includesHeader: includesHeader,
-            overrideHeader: encodeWithHeader ? decoded.header : nil)
+            overrideHeader: overrideEncodeHeader ?? (encodeWithHeader ? decoded.header : nil))
         let expected = output ?? input
         let actual = String(data: encoded, encoding: .utf8)!
         #expect(expected == actual)
@@ -109,6 +111,12 @@ func decodeEncode<T: Codable>(
             #expect(expectedException == decodingError.description)
         } else {
             throw decodingError
+        }
+    } catch let encodingError as DataEncodingError {
+        if let expectedException {
+            #expect(expectedException == encodingError.description)
+        } else {
+            throw encodingError
         }
     } catch let readingError as CSVReadingError {
         if let expectedException {
@@ -311,8 +319,7 @@ struct America: CodableString {
     try decodeEncode(
         TallAmericans.self,
         input: "name,tall,america\n,,\nAlice,yes,\nBob,,US\nChuck,yes,US\n",
-        output: "name,tall,america\n,no,\n,no,\n,no,\nChuck,yes,US\n",
-        readingOptions: ReadingOptions(useKeyMap: true))
+        output: "name,tall,america\n,no,\n,no,\n,no,\nChuck,yes,US\n")
 }
 
 // Test if decodeNil(forKey:) is called before decode(type, forKey:) with a different key
@@ -753,7 +760,7 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
     )
 }
 
-@Test func typePerformance() async throws {
+@Test func allTypes() async throws {
     struct AllTypes: Codable {
         let stringValue: String
         let boolValue: Bool
@@ -767,30 +774,108 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
         let uInt64Value: UInt64
     }
     
-    let AllTypesHeaderArray = ["stringValue", "boolValue", "doubleValue", "floatValue", "intValue", "int32Value", "int64Value", "uIntValue", "uInt32Value", "uInt64Value"]
     let AllTypesHeader = """
             stringValue,boolValue,doubleValue,floatValue,intValue,int32Value,int64Value,uIntValue,uInt32Value,uInt64Value
             """ + "\n"
     let AllTypesData = """
             Hello World!,true,3.14159,3.14159,42,42,42,42,42,42
-            """
+            """ + "\n"
     
-    let largeData = (0..<2).map { _ in AllTypesData }.joined(separator: "\n") + "\n"
+    try decodeEncode(
+        AllTypes.self,
+        input: AllTypesData,
+        hasHeaderRow: false,
+        includesHeader: false)
+
+    try decodeEncode(
+        AllTypes.self,
+        input: AllTypesHeader + AllTypesData,
+        hasHeaderRow: true,
+        includesHeader: true)
+}
+
+@Test func badEncodingHeader() async throws {
+    struct SomeTypes: Codable {
+        let stringValue: String
+        let boolValue: Bool
+    }
     
-//    let inputData = (AllTypesHeader + largeData).data(using: .utf8)!
-    let inputData = largeData.data(using: .utf8)!
-//    let decoded = try TabularDecoder().read([AllTypes].self, csvData: inputData, hasHeaderRow: true)
-    let decoded = try TabularDecoder().read([AllTypes].self, csvData: inputData, hasHeaderRow: false)
-    let encoded = try TabularEncoder().csvRepresentation(
-        decoded.rows,
-        includesHeader: true,
-        overrideHeader: [])
+    let SomeTypesData = """
+            Hello World!,true
+            """ + "\n"
+    
+    try decodeEncode(
+        SomeTypes.self,
+        input: SomeTypesData,
+        hasHeaderRow: false,
+        includesHeader: false)
+}
 
-    let expected = AllTypesHeader + largeData
-    let actual = String(data: encoded, encoding: .utf8)!
-    #expect(expected == actual)
+@Test func reserveOrderEncoding() async throws {
+    struct SomeTypes: Codable {
+        let stringValue: String
+        let boolValue: Bool
+    }
+    
+    let SomeTypesData = """
+            stringValue,boolValue
+            Hello World!,true
+            """ + "\n"
+    let SomeTypesHeaderReverse = ["boolValue", "stringValue"]
+    let SomeTypesDataReverse = """
+            boolValue,stringValue
+            true,Hello World!
+            """ + "\n"
+    
+    try decodeEncode(
+        SomeTypes.self,
+        input: SomeTypesData,
+        output: SomeTypesDataReverse,
+        overrideEncodeHeader: SomeTypesHeaderReverse)
+}
 
-//    try decodeEncode(
-//        AllTypes.self,
-//        input: allTypesHeader + largeData)
+@Test func emptyEncoding() async throws {
+    struct SomeTypes: Codable {
+        let stringValue: String
+        let boolValue: Bool
+    }
+    
+    let SomeTypesHeader = """
+            stringValue,boolValue
+            """ + "\n"
+    
+    try decodeEncode(
+        SomeTypes.self,
+        input: SomeTypesHeader)
+}
+
+// TODO:
+@Test func decodingSingleValue() async throws {
+}
+
+@Test func encodingSingleValue() async throws {
+}
+
+@Test func decodingNestedUnkeyedContainer() async throws {
+}
+
+@Test func encodingNestedUnkeyedContainer() async throws {
+}
+
+@Test func decodingNestedKeyedContainer() async throws {
+}
+
+@Test func encodingNestedKeyedContainer() async throws {
+}
+
+@Test func superDecoder() async throws {
+}
+
+@Test func superEncoder() async throws {
+}
+
+@Test func superDecoderKeyed() async throws {
+}
+
+@Test func superEncoderKeyed() async throws {
 }

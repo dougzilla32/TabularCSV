@@ -20,38 +20,132 @@ public struct TypedEncoder<Values: DataMatrix> {
     
     public func encode<T: Encodable & Collection>(
         _ value: T,
-        header: [String]?,
-        rowPermutation: [Int?]? = nil) throws -> [Values.VectorType]
+        header: [String]) throws -> [Values.VectorType]
     {
-        let encoder = DataEncoder<Values>(header: header, numRows: value.count, transform: .init(rowPermutation), options: options)
-        try encoder.encode(value)
-        return encoder.data.matrix.getVectors()
+        let headerIndicies = OrderedDictionary(uniqueKeysWithValues: header.enumerated().map { ($1, $0) })
+        let encoder = DataEncoder<Values>(header: headerIndicies, numRows: value.count, options: options, introspector: nil)
+        try value.encode(to: encoder)
+        return encoder.matrix.vectors
     }
     
     func encodeWithHeaderAndTypes<T: Encodable & Collection>(
         _ value: T,
         header: [String]?) throws -> (data: [Values.VectorType], fields: OrderedSet<CSVField>)
     {
-        let encoder = DataEncoder<Values>(header: header, numRows: value.count, transform: .map(nil), options: options)
-        try encoder.encode(value)
-        return (data: encoder.data.matrix.getVectors(), fields: encoder.data.fields!.immutableCopy())
+        let headerIndicies: OrderedDictionary<String, Int>?
+        if let header {
+            headerIndicies = OrderedDictionary(uniqueKeysWithValues: header.enumerated().map { ($1, $0) })
+        } else {
+            headerIndicies = nil
+        }
+
+        let introspector = DataEncodingIntrospector()
+        
+        let encoder = DataEncoder<Values>(header: headerIndicies, numRows: value.count, options: options, introspector: introspector)
+        try value.encode(to: encoder)
+        return (data: encoder.matrix.vectors, fields: encoder.fields!)
     }
 }
 
-fileprivate struct DataEncoder<Matrix: DataMatrix>: Encoder {
-    fileprivate var data: VectorCollection<Matrix>
+final class DataEncodingIntrospector { }
+
+fileprivate class DataEncoder<Matrix: DataMatrix>: Encoder {
     var codingPath: [CodingKey] = []
     let userInfo: [CodingUserInfoKey : Any] = [:]
 
-    init(header: [String]?, numRows: Int, transform: RowTransform, options: WritingOptions) {
-        data = VectorCollection<Matrix>(header: header, numRows: numRows, transform: transform, options: options)
+    var matrix: Matrix
+    let header: OrderedDictionary<String, Int>?
+    let options: WritingOptions
+    var currentKey: CodingKey? = nil
+    var currentColumnIndex = 0
+    var fields: OrderedSet<CSVField>?
+
+    init(header: OrderedDictionary<String, Int>?, numRows: Int, options: WritingOptions, introspector: DataEncodingIntrospector?) {
+        self.matrix = Matrix(header: header, numRows: numRows)
+        self.header = header
+        self.options = options
+
+        if introspector != nil {
+            fields = OrderedSet<CSVField>()
+        }
     }
     
-    init(data: VectorCollection<Matrix>) { self.data = data }
+    func nextRow() {
+        matrix.nextRow()
+        currentColumnIndex = 0
+    }
     
-    func encode<T: Encodable>(_ value: T) throws {
-        try value.encode(to: self)
-        data.currentColumnIndex = 0
+    func index(forKey key: CodingKey) -> Int? {
+        let index: Int
+        if let header {
+            guard let mappedIndex = header[key.stringValue] else {
+                return nil
+            }
+            index = mappedIndex
+        } else {
+            index = currentColumnIndex
+        }
+        return index
+    }
+    
+    func encodeNil(forKey key: CodingKey) {
+        defer { currentKey = nil }
+        currentKey = key
+
+        guard let index = index(forKey: key) else { return }
+        matrix.encode(nil as String?, index: index)
+    }
+
+    func encode<T: Encodable>(_ value: T, forKey key: CodingKey) throws {
+        defer { currentKey = nil }
+        currentKey = key
+
+        guard let _ = field(key, type: .string) else { return }
+
+        try encodeValue(value)
+    }
+    
+    func encodeIfPresent<T: Encodable>(_ value: T?, forKey key: CodingKey) throws {
+        defer { currentKey = nil }
+        currentKey = key
+
+        guard let index = field(key, type: .string) else { return }
+
+        guard let value else {
+            matrix.encode(nil as String?, index: index)
+            return
+        }
+        
+        try encodeValue(value)
+    }
+    
+    @inline(__always)
+    private func encodeValue<T: Encodable>(_ value: T) throws {
+        if let formatter = options.formatterForType(T.self) {
+            try formatter(value).encode(to: self)
+        } else {
+            try value.encode(to: self)
+        }
+    }
+    
+    func encodePrim<T: CSVPrimitive>(_ value: T, forKey key: CodingKey) {
+        encodePrimIfPresent(value, forKey: key)
+    }
+
+    func encodePrimIfPresent<T: CSVPrimitive>(_ value: T?, forKey key: CodingKey) {
+        defer { currentKey = nil }
+        currentKey = key
+
+        guard let index = field(key, type: T.csvType) else { return }
+        matrix.encode(value, index: index)
+    }
+    
+    @inline(__always)
+    private func field(_ key: CodingKey, type: CSVType) -> Int? {
+        guard let index = index(forKey: key) else { return nil }
+        fields?.add(.init(name: key.stringValue, type: type))
+        currentColumnIndex += 1
+        return index
     }
     
     func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedEncodingContainer<Key> {
@@ -63,59 +157,76 @@ fileprivate struct DataEncoder<Matrix: DataMatrix>: Encoder {
     }
     
     func singleValueContainer() -> SingleValueEncodingContainer {
-        DataSingleValueEncoding(encoder: self)
+        return DataSingleValueEncoding(key: currentKey, encoder: self)
     }
 }
 
 fileprivate struct DataKeyedEncoding<Key: CodingKey, Matrix: DataMatrix>: KeyedEncodingContainerProtocol {
-    private let encoder: DataEncoder<Matrix>
+    private var encoder: DataEncoder<Matrix>
     var codingPath: [CodingKey] = []
     
     init(encoder: DataEncoder<Matrix>) { self.encoder = encoder }
     
-    var data: VectorCollection<Matrix> { encoder.data }
-    
-    mutating func encodeNil(                forKey key: Key) throws { data.encodeNext("nil", forKey: key) }
-    mutating func encode(_ value: Bool,     forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: String,   forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: Double,   forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: Float,    forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: Int,      forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: Int8,     forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: Int16,    forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: Int32,    forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: Int64,    forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: UInt,     forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: UInt8,    forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: UInt16,   forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: UInt32,   forKey key: Key) throws { data.encodeNext(value, forKey: key) }
-    mutating func encode(_ value: UInt64,   forKey key: Key) throws { data.encodeNext(value, forKey: key) }
+    mutating func encodeNil(forKey key: Key) throws {
+        encoder.encodeNil(forKey: key)
+    }
+
+    mutating func encode(_ value: Bool,     forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: String,   forKey key: Key) throws { encodeString(value, forKey: key) }
+    mutating func encode(_ value: Double,   forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: Float,    forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: Int,      forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: Int8,     forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: Int16,    forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: Int32,    forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: Int64,    forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: UInt,     forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: UInt8,    forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: UInt16,   forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: UInt32,   forKey key: Key) throws { encodePrim(value, forKey: key) }
+    mutating func encode(_ value: UInt64,   forKey key: Key) throws { encodePrim(value, forKey: key) }
     @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-    mutating func encode(_ value: UInt128,  forKey key: Key) throws { data.encodeNext(value, forKey: key) }
+    mutating func encode(_ value: UInt128,  forKey key: Key) throws { encodePrim(value, forKey: key) }
 
     mutating func encode<T: Encodable>(_ value: T, forKey key: Key) throws {
-        try data.encodeNext(value, forKey: key, encoder: encoder)
+        try encoder.encode(value, forKey: key)
     }
     
-    mutating func encodeIfPresent(_ value: Bool?,    forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: String?,  forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: Double?,  forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: Float?,   forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: Int?,     forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: Int8?,    forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: Int16?,   forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: Int32?,   forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: Int64?,   forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: UInt?,    forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: UInt8?,   forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: UInt16?,  forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: UInt32?,  forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
-    mutating func encodeIfPresent(_ value: UInt64?,  forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: Bool?,    forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: String?,  forKey key: Key) throws { encodeStringIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: Double?,  forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: Float?,   forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: Int?,     forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: Int8?,    forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: Int16?,   forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: Int32?,   forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: Int64?,   forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: UInt?,    forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: UInt8?,   forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: UInt16?,  forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: UInt32?,  forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: UInt64?,  forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
     @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-    mutating func encodeIfPresent(_ value: UInt128?, forKey key: Key) throws { data.encodeNextIfPresent(value, forKey: key) }
+    mutating func encodeIfPresent(_ value: UInt128?, forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
 
     mutating func encodeIfPresent<T: Encodable>(_ value: T?, forKey key: Key) throws {
-        try data.encodeNextIfPresent(value, forKey: key, encoder: encoder)
+        try encoder.encodeIfPresent(value, forKey: key)
+    }
+    
+    private mutating func encodePrim<T: CSVPrimitive>(_ value: T, forKey key: CodingKey) {
+        encoder.encodePrim(value, forKey: key)
+    }
+    
+    private mutating func encodePrimIfPresent<T: CSVPrimitive>(_ value: T?, forKey key: CodingKey) {
+        encoder.encodePrimIfPresent(value, forKey: key)
+    }
+    
+    private mutating func encodeString(_ value: String, forKey key: CodingKey) {
+        encoder.encodePrim(value, forKey: key)
+    }
+    
+    private mutating func encodeStringIfPresent(_ value: String?, forKey key: CodingKey) {
+        encoder.encodePrimIfPresent(value, forKey: key)
     }
     
     mutating func nestedContainer<NestedKey: CodingKey>(
@@ -135,40 +246,44 @@ fileprivate struct DataKeyedEncoding<Key: CodingKey, Matrix: DataMatrix>: KeyedE
 }
 
 fileprivate struct DataUnkeyedEncoding<Matrix: DataMatrix>: UnkeyedEncodingContainer {
-    private let encoder: DataEncoder<Matrix>
+    private var encoder: DataEncoder<Matrix>
     var codingPath: [CodingKey] = []
-    var count: Int { data.matrix.numRows }
+    var count: Int { encoder.matrix.numRows }
 
     init(encoder: DataEncoder<Matrix>) { self.encoder = encoder }
     
-    var data: VectorCollection<Matrix> { encoder.data }
-    
-    private func encodeNext<T: CSVPrimitive>(_ value: T) throws {
-        data.nextRow()
-        data.encodeNext(value)
+    mutating func encodeNil() throws {
+        throw DataEncodingError.invalidUnkeyedValue(nil as String?)
     }
     
-    mutating func encodeNil()             throws { data.encodeNext("nil") }
-    mutating func encode(_ value: Bool)   throws { data.encodeNext(value) }
-    mutating func encode(_ value: String) throws { data.encodeNext(value) }
-    mutating func encode(_ value: Double) throws { data.encodeNext(value) }
-    mutating func encode(_ value: Float)  throws { data.encodeNext(value) }
-    mutating func encode(_ value: Int)    throws { data.encodeNext(value) }
-    mutating func encode(_ value: Int8)   throws { data.encodeNext(value) }
-    mutating func encode(_ value: Int16)  throws { data.encodeNext(value) }
-    mutating func encode(_ value: Int32)  throws { data.encodeNext(value) }
-    mutating func encode(_ value: Int64)  throws { data.encodeNext(value) }
-    mutating func encode(_ value: UInt)   throws { data.encodeNext(value) }
-    mutating func encode(_ value: UInt8)  throws { data.encodeNext(value) }
-    mutating func encode(_ value: UInt16) throws { data.encodeNext(value) }
-    mutating func encode(_ value: UInt32) throws { data.encodeNext(value) }
-    mutating func encode(_ value: UInt64) throws { data.encodeNext(value) }
+    mutating func encode(_ value: Bool)   throws { try encodePrim(value) }
+    mutating func encode(_ value: String) throws { try encodeString(value) }
+    mutating func encode(_ value: Double) throws { try encodePrim(value) }
+    mutating func encode(_ value: Float)  throws { try encodePrim(value) }
+    mutating func encode(_ value: Int)    throws { try encodePrim(value) }
+    mutating func encode(_ value: Int8)   throws { try encodePrim(value) }
+    mutating func encode(_ value: Int16)  throws { try encodePrim(value) }
+    mutating func encode(_ value: Int32)  throws { try encodePrim(value) }
+    mutating func encode(_ value: Int64)  throws { try encodePrim(value) }
+    mutating func encode(_ value: UInt)   throws { try encodePrim(value) }
+    mutating func encode(_ value: UInt8)  throws { try encodePrim(value) }
+    mutating func encode(_ value: UInt16) throws { try encodePrim(value) }
+    mutating func encode(_ value: UInt32) throws { try encodePrim(value) }
+    mutating func encode(_ value: UInt64) throws { try encodePrim(value) }
     @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-    mutating func encode(_ value: UInt128) throws { data.encodeNext(value) }
+    mutating func encode(_ value: UInt128) throws { try encodePrim(value) }
 
     mutating func encode<T: Encodable>(_ value: T) throws {
-        data.nextRow()
-        try data.encodeNext(value, encoder: encoder)
+        encoder.nextRow()
+        try value.encode(to: encoder)
+    }
+    
+    private mutating func encodePrim<T: CSVPrimitive>(_ value: T) throws {
+        throw DataEncodingError.invalidUnkeyedValue(value)
+    }
+    
+    private mutating func encodeString<T: CSVPrimitive>(_ value: T) throws {
+        throw DataEncodingError.invalidUnkeyedValue(value)
     }
     
     mutating func nestedContainer<NestedKey: CodingKey>(
@@ -187,32 +302,51 @@ fileprivate struct DataUnkeyedEncoding<Matrix: DataMatrix>: UnkeyedEncodingConta
 }
 
 fileprivate struct DataSingleValueEncoding<Matrix: DataMatrix>: SingleValueEncodingContainer {
+    var userInfo: [CodingUserInfoKey : Any] = [:]
+    
+    private let key: CodingKey?
     private let encoder: DataEncoder<Matrix>
     var codingPath: [CodingKey] = []
+    
+    init(key: CodingKey? = nil, encoder: DataEncoder<Matrix>) {
+        self.key = key
+        self.encoder = encoder
+    }
 
-    init(encoder: DataEncoder<Matrix>) { self.encoder = encoder }
-
-    var data: VectorCollection<Matrix> { encoder.data }
-
-    mutating func encodeNil()             throws { data.encodeNext("nil") }
-    mutating func encode(_ value: Bool)   throws { data.encodeNext(value) }
-    mutating func encode(_ value: String) throws { data.encodeNext(value) }
-    mutating func encode(_ value: Double) throws { data.encodeNext(value) }
-    mutating func encode(_ value: Float)  throws { data.encodeNext(value) }
-    mutating func encode(_ value: Int)    throws { data.encodeNext(value) }
-    mutating func encode(_ value: Int8)   throws { data.encodeNext(value) }
-    mutating func encode(_ value: Int16)  throws { data.encodeNext(value) }
-    mutating func encode(_ value: Int32)  throws { data.encodeNext(value) }
-    mutating func encode(_ value: Int64)  throws { data.encodeNext(value) }
-    mutating func encode(_ value: UInt)   throws { data.encodeNext(value) }
-    mutating func encode(_ value: UInt8)  throws { data.encodeNext(value) }
-    mutating func encode(_ value: UInt16) throws { data.encodeNext(value) }
-    mutating func encode(_ value: UInt32) throws { data.encodeNext(value) }
-    mutating func encode(_ value: UInt64) throws { data.encodeNext(value) }
+    mutating func encodeNil() throws {
+        encoder.encodeNil(forKey: key!)
+    }
+    
+    mutating func encode(_ value: Bool)   throws { encodePrim(value) }
+    mutating func encode(_ value: String) throws { encodeString(value) }
+    mutating func encode(_ value: Double) throws { encodePrim(value) }
+    mutating func encode(_ value: Float)  throws { encodePrim(value) }
+    mutating func encode(_ value: Int)    throws { encodePrim(value) }
+    mutating func encode(_ value: Int8)   throws { encodePrim(value) }
+    mutating func encode(_ value: Int16)  throws { encodePrim(value) }
+    mutating func encode(_ value: Int32)  throws { encodePrim(value) }
+    mutating func encode(_ value: Int64)  throws { encodePrim(value) }
+    mutating func encode(_ value: UInt)   throws { encodePrim(value) }
+    mutating func encode(_ value: UInt8)  throws { encodePrim(value) }
+    mutating func encode(_ value: UInt16) throws { encodePrim(value) }
+    mutating func encode(_ value: UInt32) throws { encodePrim(value) }
+    mutating func encode(_ value: UInt64) throws { encodePrim(value) }
     @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-    mutating func encode(_ value: UInt128)throws { data.encodeNext(value) }
-
+    mutating func encode(_ value: UInt128)throws { encodePrim(value) }
+    
     mutating func encode<T: Encodable>(_ value: T) throws {
-        try data.encodeNext(value, encoder: encoder)
+        if let key {
+            try encoder.encode(value, forKey: key)
+        } else {
+            try value.encode(to: encoder)
+        }
+    }
+    
+    private mutating func encodePrim<T: CSVPrimitive>(_ value: T) {
+        encoder.encodePrim(value, forKey: key!)
+    }
+    
+    private mutating func encodeString(_ value: String) {
+        encoder.encodePrim(value, forKey: key!)
     }
 }

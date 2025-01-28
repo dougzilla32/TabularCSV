@@ -26,6 +26,11 @@ enum FileOrData {
     }
 }
 
+struct ColumnInfo {
+    let header: [String]
+    let types: [String: CSVType]
+}
+
 //public struct StreamingTask: Sendable {
 //    func start() { }
 //    func stop() { }
@@ -93,7 +98,7 @@ public struct TabularDecoder {
         _ type: T.Type,
         fromPath filePath: String,
         hasHeaderRow: Bool = true,
-        overrideHeader: [String]? = nil) throws -> (rows: T, header: [String])
+        overrideHeader: [String]? = nil) throws -> (rows: T, header: [String]?)
     {
         try read(type, fileOrData: FileOrData.file(filePath), hasHeaderRow: hasHeaderRow, overrideHeader: overrideHeader)
     }
@@ -102,7 +107,7 @@ public struct TabularDecoder {
         _ type: T.Type,
         csvData: Data,
         hasHeaderRow: Bool = true,
-        overrideHeader: [String]? = nil) throws -> (rows: T, header: [String])
+        overrideHeader: [String]? = nil) throws -> (rows: T, header: [String]?)
     {
         try read(type, fileOrData: FileOrData(data: csvData), hasHeaderRow: hasHeaderRow, overrideHeader: overrideHeader)
     }
@@ -111,7 +116,7 @@ public struct TabularDecoder {
         _ type: T.Type,
         fileOrData: FileOrData,
         hasHeaderRow: Bool,
-        overrideHeader: [String]?) throws -> (rows: T, header: [String])
+        overrideHeader: [String]?) throws -> (rows: T, header: [String]?)
     {
         let columnInfo = try introspectColumns(type, fileOrData: fileOrData, hasHeaderRow: hasHeaderRow, overrideHeader: overrideHeader)
         let headerOptions = options.hasHeaderRow(hasHeaderRow)
@@ -126,12 +131,7 @@ public struct TabularDecoder {
 
         let dataFrameDecoder = DataFrameDecoder(options: options)
         let rows = try dataFrameDecoder.decode(type, rows: dataFrame.rows, columns: dataFrame.columns, header: columnInfo.header)
-        return (rows: rows, header: overrideHeader ?? dataFrame.columns.map(\.name))
-    }
-    
-    struct ColumnInfo {
-        let header: [String]
-        let types: [String: CSVType]
+        return (rows: rows, header: columnInfo.header)
     }
     
     private func introspectColumns<T: Decodable & Collection>(
@@ -158,13 +158,12 @@ public struct TabularDecoder {
         let dataFrame = try DataFrame(csvData: firstPart.data, options: headerOptions.csvReadingOptions)
         let csvHeader = hasHeaderRow ? dataFrame.columns.map(\.name) : nil
 
-        let types: [String: CSVType]
-        do {
+        let types: [String: CSVType] = {
             let typesHeader = csvHeader ?? (0..<dataFrame.rows[0].count).map { "Column \($0)" }
-            types = Dictionary(uniqueKeysWithValues: typesHeader.map { ($0, .string) })
-        }
+            return Dictionary(uniqueKeysWithValues: typesHeader.map { ($0, .string) })
+        }()
 
-        let header = overrideHeader ?? (hasHeaderRow ? dataFrame.columns.map(\.name) : nil)
+        let header = overrideHeader ?? csvHeader
         if let header {
             return ColumnInfo(header: header, types: types)
         }
@@ -184,7 +183,6 @@ public struct TabularDecoder {
             header: typeDecoderResult.fields.all().map(\.name),
             types: types)
     }
-
 
     enum FileError: Error {
         case open

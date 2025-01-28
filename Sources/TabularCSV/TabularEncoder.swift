@@ -48,9 +48,9 @@ public struct TabularEncoder {
     {
         let columnInfo = try introspectColumns(value, fileOrData: fileOrData, includesHeader: includesHeader, overrideHeader: overrideHeader)
         let headerOptions = self.options.includesHeader(includesHeader)
+        
         let dataFrameEncoder = DataFrameEncoder(options: headerOptions.writingOptions)
-        let header = overrideHeader ?? columnInfo.encodedHeader
-        let columns = try dataFrameEncoder.encode(value, header: header, rowPermutation: columnInfo.permutation)
+        let columns = try dataFrameEncoder.encode(value, header: columnInfo.header).map { $0.eraseToAnyColumn() }
 
         switch fileOrData {
         case .file(let filePath):
@@ -64,25 +64,17 @@ public struct TabularEncoder {
         _ value: T,
         fileOrData: FileOrData,
         includesHeader: Bool,
-        overrideHeader: [String]?) throws -> (permutation: [Int?]?, encodedHeader: [String]) where T.Element: Encodable
+        overrideHeader: [String]?) throws -> ColumnInfo where T.Element: Encodable
     {
-        let typeEncoder = StringEncoder(options: options)
-        let result = try typeEncoder.encodeWithHeaderAndTypes([value.first], header: nil)
-        let encodedHeader = result.fields.all().map(\.name)
-
-        let permutation: [Int?]?
         if let overrideHeader {
-            permutation = try createHeaderPermutation(encodedHeader: encodedHeader, overrideHeader: overrideHeader)
-        } else {
-            permutation = nil
+            return ColumnInfo(header: overrideHeader, types: [:])
         }
-        
-        return (permutation: permutation, encodedHeader: encodedHeader)
-    }
 
-    private func createHeaderPermutation(encodedHeader: [String], overrideHeader: [String]) throws -> [Int?]? {
-        let overrideHeaderMap = Dictionary(uniqueKeysWithValues: overrideHeader.enumerated().map { ($1, $0) })
-        let permutation = encodedHeader.map { overrideHeaderMap[$0] }
-        return permutation.enumerated().allSatisfy { $0.element == $0.offset } ? nil :  permutation
+        let typeEncoder = StringEncoder(options: options)
+        let typeEncoderResult = try typeEncoder.encodeWithHeaderAndTypes([value.first], header: nil)
+        
+        return ColumnInfo(
+            header: typeEncoderResult.fields.all().map(\.name),
+            types: [:])
     }
 }
