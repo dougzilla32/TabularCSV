@@ -27,8 +27,8 @@ enum FileOrData {
 }
 
 struct ColumnInfo {
-    let header: [String]
-    let types: [String: CSVType]
+    let header: [String]?
+    let types: [String: CSVType]?
 }
 
 //public struct StreamingTask: Sendable {
@@ -124,13 +124,13 @@ public struct TabularDecoder {
         let dataFrame: DataFrame
         switch fileOrData {
         case .file(let filePath):
-            dataFrame = try DataFrame(contentsOfCSVFile: URL(fileURLWithPath: filePath), types: columnInfo.types, options: headerOptions.csvReadingOptions)
+            dataFrame = try DataFrame(contentsOfCSVFile: URL(fileURLWithPath: filePath), types: columnInfo.types ?? [:], options: headerOptions.csvReadingOptions)
         case .data(let dataValue):
-            dataFrame = try DataFrame(csvData: dataValue.data, types: columnInfo.types, options: headerOptions.csvReadingOptions)
+            dataFrame = try DataFrame(csvData: dataValue.data, types: columnInfo.types ?? [:], options: headerOptions.csvReadingOptions)
         }
 
         let dataFrameDecoder = DataFrameDecoder(options: options)
-        let rows = try dataFrameDecoder.decode(type, rows: dataFrame.rows, columns: dataFrame.columns, header: columnInfo.header)
+        let rows = try dataFrameDecoder.decode(type, rows: dataFrame.rows, columns: dataFrame.columns, header: columnInfo.header ?? [])
         return (rows: rows, header: columnInfo.header)
     }
     
@@ -140,22 +140,21 @@ public struct TabularDecoder {
         hasHeaderRow: Bool,
         overrideHeader: [String]?) throws -> ColumnInfo
     {
-        let firstPart: (data: Data, lines: [String])
-        do {
-            let numLinesToRead = hasHeaderRow ? 2 : 1
+        let firstPart: (data: Data, lines: [String]) = try {
+            let limit = hasHeaderRow ? 2 : 1
             switch fileOrData {
             case .file(let filePath):
-                firstPart = try TabularDecoder.readLines(from: filePath, limit: numLinesToRead)
+                return try TabularDecoder.readLines(from: filePath, limit: limit)
             case .data(let dataValue):
-                firstPart = try TabularDecoder.convertLines(from: dataValue.data, limit: numLinesToRead)
+                return try TabularDecoder.convertLines(from: dataValue.data, limit: limit)
             }
-            guard firstPart.lines.count > 0 else {
-                return ColumnInfo(header: [], types: [:])
-            }
+        }()
+
+        guard !firstPart.lines.isEmpty else {
+            return ColumnInfo(header: nil, types: nil)
         }
 
-        let headerOptions = options.hasHeaderRow(hasHeaderRow)
-        let dataFrame = try DataFrame(csvData: firstPart.data, options: headerOptions.csvReadingOptions)
+        let dataFrame = try DataFrame(csvData: firstPart.data, options: options.hasHeaderRow(hasHeaderRow).csvReadingOptions)
         let csvHeader = hasHeaderRow ? dataFrame.columns.map(\.name) : nil
 
         let types: [String: CSVType] = {
@@ -163,27 +162,26 @@ public struct TabularDecoder {
             return Dictionary(uniqueKeysWithValues: typesHeader.map { ($0, .string) })
         }()
 
-        let header = overrideHeader ?? csvHeader
-        if let header {
+        if let header = overrideHeader ?? csvHeader {
             return ColumnInfo(header: header, types: types)
         }
-        
-        // There is no override header, and there is no header in the csv file, so we need to
+
+        // There is no override header and there is no header in the csv file, so we need to
         // introspect the header from the Decodable.
-        let typeDecoder = StringDecoder(options: options)
-        let row: [String?] = dataFrame.rows[0].map {
-            if let value = $0 { String(describing: value) } else { nil }
-        }
-        let typeDecoderResult: (value: T, fields: OrderedSet<CSVField>)
-        do {
-            typeDecoderResult = try typeDecoder.decodeTypes(type, rows: [row], columns: StringColumns(), header: csvHeader)
-        } catch {
-            throw DataDecodingError.headerIsNeeded(error: error)
-        }
-        
+        let typeDecoderResult = try {
+            let row = dataFrame.rows[0].map { $0.map(String.init(describing:)) }
+            let typeDecoder = StringDecoder(options: options)
+            do {
+                return try typeDecoder.decodeTypes(type, rows: [row], columns: StringColumns(), header: csvHeader)
+            } catch {
+                throw DataDecodingError.headerIsNeeded(error: error)
+            }
+        }()
+
         return ColumnInfo(
             header: typeDecoderResult.fields.all().map(\.name),
-            types: types)
+            types: types
+        )
     }
 
     enum FileError: Error {

@@ -50,7 +50,7 @@ public struct TabularEncoder {
         let headerOptions = self.options.includesHeader(includesHeader)
         
         let dataFrameEncoder = DataFrameEncoder(options: headerOptions.writingOptions)
-        let columns = try dataFrameEncoder.encode(value, header: columnInfo.header).map { $0.eraseToAnyColumn() }
+        let columns = try dataFrameEncoder.encode(value, header: columnInfo.header ?? []).map { $0.eraseToAnyColumn() }
 
         switch fileOrData {
         case .file(let filePath):
@@ -67,7 +67,7 @@ public struct TabularEncoder {
         overrideHeader: [String]?) throws -> ColumnInfo where T.Element: Encodable
     {
         if let overrideHeader {
-            return ColumnInfo(header: overrideHeader, types: [:])
+            return ColumnInfo(header: overrideHeader, types: nil)
         }
 
         let typeEncoder = StringEncoder(options: options)
@@ -75,6 +75,6 @@ public struct TabularEncoder {
         
         return ColumnInfo(
             header: typeEncoderResult.fields.all().map(\.name),
-            types: [:])
+            types: nil)
     }
 }

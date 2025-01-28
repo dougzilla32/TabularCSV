@@ -71,7 +71,8 @@ fileprivate class DataEncoder<Matrix: DataMatrix>: Encoder {
         currentColumnIndex = 0
     }
     
-    func index(forKey key: CodingKey) -> Int? {
+    func index(forKey key: CodingKey?) -> Int? {
+        guard let key else { return 0 }
         let index: Int
         if let header {
             guard let mappedIndex = header[key.stringValue] else {
@@ -84,7 +85,7 @@ fileprivate class DataEncoder<Matrix: DataMatrix>: Encoder {
         return index
     }
     
-    func encodeNil(forKey key: CodingKey) {
+    func encodeNil(forKey key: CodingKey?) {
         defer { currentKey = nil }
         currentKey = key
 
@@ -124,11 +125,11 @@ fileprivate class DataEncoder<Matrix: DataMatrix>: Encoder {
         }
     }
     
-    func encodePrim<T: CSVPrimitive>(_ value: T, forKey key: CodingKey) {
+    func encodePrim<T: CSVPrimitive>(_ value: T, forKey key: CodingKey?) {
         encodePrimIfPresent(value, forKey: key)
     }
 
-    func encodePrimIfPresent<T: CSVPrimitive>(_ value: T?, forKey key: CodingKey) {
+    func encodePrimIfPresent<T: CSVPrimitive>(_ value: T?, forKey key: CodingKey?) {
         defer { currentKey = nil }
         currentKey = key
 
@@ -137,9 +138,9 @@ fileprivate class DataEncoder<Matrix: DataMatrix>: Encoder {
     }
     
     @inline(__always)
-    private func field(_ key: CodingKey, type: CSVType) -> Int? {
+    private func field(_ key: CodingKey?, type: CSVType) -> Int? {
         guard let index = index(forKey: key) else { return nil }
-        fields?.add(.init(name: key.stringValue, type: type))
+        fields?.add(.init(name: key?.stringValue ?? "Column 0", type: type))
         currentColumnIndex += 1
         return index
     }
@@ -153,7 +154,7 @@ fileprivate class DataEncoder<Matrix: DataMatrix>: Encoder {
     }
     
     func singleValueContainer() -> SingleValueEncodingContainer {
-        return DataSingleValueEncoding(key: currentKey, encoder: self)
+        DataSingleValueEncoding(key: currentKey, encoder: self)
     }
 }
 
@@ -310,7 +311,7 @@ fileprivate struct DataSingleValueEncoding<Matrix: DataMatrix>: SingleValueEncod
     }
 
     mutating func encodeNil() throws {
-        encoder.encodeNil(forKey: key!)
+        encoder.encodeNil(forKey: key)
     }
     
     mutating func encode(_ value: Bool)   throws { encodePrim(value) }
@@ -339,10 +340,10 @@ fileprivate struct DataSingleValueEncoding<Matrix: DataMatrix>: SingleValueEncod
     }
     
     private mutating func encodePrim<T: CSVPrimitive>(_ value: T) {
-        encoder.encodePrim(value, forKey: key!)
+        encoder.encodePrim(value, forKey: key)
     }
     
     private mutating func encodeString(_ value: String) {
-        encoder.encodePrim(value, forKey: key!)
+        encoder.encodePrim(value, forKey: key)
     }
 }

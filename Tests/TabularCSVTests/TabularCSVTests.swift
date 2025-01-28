@@ -851,6 +851,44 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
 
 // TODO:
 @Test func decodingSingleValue() async throws {
+    struct SingleValue: Codable {
+        let value: String
+
+        // Custom initializer for decoding
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            _ = try container.decode(String.self)
+            _ = try container.decode(String.self)
+            self.value = try container.decode(String.self)
+        }
+
+        // Custom initializer for encoding (optional, for completeness)
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(value)
+            try container.encode(value)
+            try container.encode(value)
+        }
+    }
+    
+    let SingleValueCSV = """
+            value
+            Hello World!
+            """ + "\n"
+    
+    try decodeEncode(
+        SingleValue.self,
+        input: SingleValueCSV)
+
+    let SingleValueCSVNoHeader = """
+            Hello World!
+            """ + "\n"
+
+    try decodeEncode(
+        SingleValue.self,
+        input: SingleValueCSVNoHeader,
+        hasHeaderRow: false,
+        includesHeader: false)
 }
 
 @Test func encodingSingleValue() async throws {

@@ -81,14 +81,14 @@ final class DataDecodingIntrospector {
         return isNil
     }
     
-    func addCSVField<T: CSVPrimitive>(key: CodingKey, type: T.Type, rowNumber: Int) throws {
-        if let decodeNilKey, decodeNilKey.stringValue == key.stringValue {
+    func addCSVField<T: CSVPrimitive>(key: CodingKey?, type: T.Type, rowNumber: Int) throws {
+        if let decodeNilKey, decodeNilKey.stringValue == key?.stringValue {
             decodeNilKeyMatch = decodeNilKey
         } else {
             decodeNilKeyMatch = nil
         }
         
-        fields.add(CSVField(name: key.stringValue, type: type.csvType))
+        fields.add(.init(name: key?.stringValue ?? "Column 0", type: type.csvType))
         currentColumnIndex += 1
     }
     
@@ -220,12 +220,14 @@ struct DataDecoder<Rows: DataRows, Columns: DataColumns>: Decoder {
     }
     
     public func unkeyedContainer() throws -> UnkeyedDecodingContainer {
-        return DataUnkeyedDecoder(rowCount: rows.count, decoder: self)
+        DataUnkeyedDecoder(rowCount: rows.count, decoder: self)
     }
     
     public func singleValueContainer() throws -> SingleValueDecodingContainer {
-        // FIXME
-        throw DataDecodingError.decoder("singleValueContainer", rowNumber: -1)
+        guard let currentRow else {
+            throw DataDecodingError.valueNotFound(String.self, rowNumber: rowNumber)
+        }
+        return DataSingleValueDecoder(index: 0, key: nil, row: currentRow, rowNumber: rowNumber, options: options, introspector: introspector)
     }
 }
 
@@ -335,9 +337,8 @@ fileprivate struct IntrospectedDataKeyedDecoding<Key: CodingKey, Row: DataRow, C
             return nil
         }
 
-        try introspector.addCSVField(key: key, type: String.self, rowNumber: rowNumber)
-        
-        let decoder = DataSingleValueDecoder(index: index, key: key, row: row, rowNumber: rowNumber, options: options)
+
+        let decoder = DataSingleValueDecoder(index: index, key: key, row: row, rowNumber: rowNumber, options: options, introspector: introspector)
         do {
             let decodedValue: T = try T(from: decoder)
             return decodedValue
@@ -497,7 +498,7 @@ fileprivate struct DataKeyedDecoding<Key: CodingKey, Row: DataRow, Columns: Data
             return nil
         }
 
-        let decoder = DataSingleValueDecoder(index: index, key: key, row: row, rowNumber: rowNumber, options: options)
+        let decoder = DataSingleValueDecoder(index: index, key: key, row: row, rowNumber: rowNumber, options: options, introspector: nil)
         do {
             return try T(from: decoder)
         } catch CodableStringError.invalidFormat(let string) {
@@ -656,17 +657,19 @@ fileprivate struct DataSingleValueDecoder<Row: DataRow>: Decoder, SingleValueDec
     var userInfo: [CodingUserInfoKey: Any] { [:] }
 
     private let index: Int
-    private let key: CodingKey
+    private let key: CodingKey?
     private let row: Row
     private let rowNumber: Int
     private let options: ReadingOptions
+    private let introspector: DataDecodingIntrospector?
     
-    init(index: Int, key: CodingKey, row: Row, rowNumber: Int, options: ReadingOptions) {
+    init(index: Int, key: CodingKey?, row: Row, rowNumber: Int, options: ReadingOptions, introspector: DataDecodingIntrospector?) {
         self.index = index
         self.key = key
         self.row = row
         self.rowNumber = rowNumber
         self.options = options
+        self.introspector = introspector
     }
 
     func container<Key>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> {
@@ -720,8 +723,9 @@ fileprivate struct DataSingleValueDecoder<Row: DataRow>: Decoder, SingleValueDec
 
     private func decodePrim<T: CSVPrimitive>(_ type: T.Type) throws -> T {
         guard let value = row[index, type, options] else {
-            throw DataDecodingError.valueNotFound(String.self, forKey: key, rowNumber: rowNumber)
+            throw DataDecodingError.valueNotFound(T.self, forKey: key, rowNumber: rowNumber)
         }
+        try introspector?.addCSVField(key: key, type: type, rowNumber: rowNumber)
         return value
     }
     
@@ -733,6 +737,7 @@ fileprivate struct DataSingleValueDecoder<Row: DataRow>: Decoder, SingleValueDec
         guard let value else {
             throw DataDecodingError.valueNotFound(String.self, forKey: key, rowNumber: rowNumber)
         }
+        try introspector?.addCSVField(key: key, type: String.self, rowNumber: rowNumber)
         return value
     }
 }
