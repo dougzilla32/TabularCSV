@@ -23,7 +23,7 @@ public struct TypedEncoder<Values: DataMatrix> {
         header: [String]) throws -> [Values.VectorType]
     {
         let headerIndicies = OrderedDictionary(uniqueKeysWithValues: header.enumerated().map { ($1, $0) })
-        let encoder = DataEncoder<Values>(header: headerIndicies, numRows: value.count, options: options, introspector: nil)
+        let encoder = DataEncoder<Values>(header: headerIndicies, numRows: value.count, options: options, introspect: false)
         try value.encode(to: encoder)
         return encoder.matrix.vectors
     }
@@ -39,15 +39,11 @@ public struct TypedEncoder<Values: DataMatrix> {
             headerIndicies = nil
         }
 
-        let introspector = DataEncodingIntrospector()
-        
-        let encoder = DataEncoder<Values>(header: headerIndicies, numRows: value.count, options: options, introspector: introspector)
+        let encoder = DataEncoder<Values>(header: headerIndicies, numRows: value.count, options: options, introspect: true)
         try value.encode(to: encoder)
         return (data: encoder.matrix.vectors, fields: encoder.fields!)
     }
 }
-
-final class DataEncodingIntrospector { }
 
 fileprivate class DataEncoder<Matrix: DataMatrix>: Encoder {
     var codingPath: [CodingKey] = []
@@ -60,12 +56,12 @@ fileprivate class DataEncoder<Matrix: DataMatrix>: Encoder {
     var currentColumnIndex = 0
     var fields: OrderedSet<CSVField>?
 
-    init(header: OrderedDictionary<String, Int>?, numRows: Int, options: WritingOptions, introspector: DataEncodingIntrospector?) {
+    init(header: OrderedDictionary<String, Int>?, numRows: Int, options: WritingOptions, introspect: Bool) {
         self.matrix = Matrix(header: header, numRows: numRows)
         self.header = header
         self.options = options
 
-        if introspector != nil {
+        if introspect {
             fields = OrderedSet<CSVField>()
         }
     }

@@ -149,7 +149,7 @@ public struct TabularDecoder {
             case .data(let dataValue):
                 firstPart = try TabularDecoder.convertLines(from: dataValue.data, limit: numLinesToRead)
             }
-            guard firstPart.lines.count == numLinesToRead else {
+            guard firstPart.lines.count > 0 else {
                 return ColumnInfo(header: [], types: [:])
             }
         }
@@ -168,6 +168,8 @@ public struct TabularDecoder {
             return ColumnInfo(header: header, types: types)
         }
         
+        // There is no override header, and there is no header in the csv file, so we need to
+        // introspect the header from the Decodable.
         let typeDecoder = StringDecoder(options: options)
         let row: [String?] = dataFrame.rows[0].map {
             if let value = $0 { String(describing: value) } else { nil }
