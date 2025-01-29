@@ -97,12 +97,12 @@ public struct DataDecodingError: Error, CustomStringConvertible, CustomDebugStri
         DataDecodingError.dataCorrupted(context(description: "Cannot create nested container", forKey: key, rowNumber: rowNumber))
     }
     
-    static func superDecoder(forKey key: CodingKey? = nil, rowNumber: Int) -> DataDecodingError {
-        DataDecodingError.dataCorrupted(context(description: "Cannot create super decoder", forKey: key, rowNumber: rowNumber))
-    }
-    
     static func unkeyedContainer(rowNumber: Int) -> DataDecodingError {
         DataDecodingError.dataCorrupted(context(description: "Cannot create unkeyed container", rowNumber: rowNumber))
+    }
+    
+    static func superDecoder(forKey key: CodingKey, rowNumber: Int) -> DataDecodingError {
+        DataDecodingError.dataCorrupted(context(description: "Cannot create super decoder", forKey: key, rowNumber: rowNumber))
     }
     
     private static func context(description: String, forKey key: CodingKey? = nil, rowNumber: Int) -> DecodingError.Context {

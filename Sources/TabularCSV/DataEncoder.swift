@@ -237,7 +237,7 @@ fileprivate struct DataKeyedEncoding<Key: CodingKey, Matrix: DataMatrix>: KeyedE
         DataUnkeyedEncoding(encoder: encoder)
     }
     
-    mutating func superEncoder() -> Encoder { superEncoder(forKey: Key(stringValue: "super")!) }
+    mutating func superEncoder() -> Encoder { encoder }
 
     mutating func superEncoder(forKey key: Key) -> Encoder { encoder }
 }

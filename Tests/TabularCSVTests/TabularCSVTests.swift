@@ -598,14 +598,14 @@ struct Content: Codable {
 // MARK: Pet and Cat
 
 class Pet: Codable {
-    let name: String
-    let age: Int
     @YesNo var friendly: Bool
+    let age: Int
+    let name: String
     
     enum CodingKeys: String, CodingKey {
         case name = "Name"
-        case age = "Age"
         case friendly = "Friendly"
+        case age = "Age"
     }
 }
 
@@ -613,18 +613,18 @@ class Cat: Pet {
     let color: String
     let longHair: Bool
     
-    required init(from decoder: any Decoder) throws {
+    required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.color = try container.decode(String.self, forKey: .color)
         self.longHair = try container.decode(Bool.self, forKey: .longHair)
-        try super.init(from: decoder)
+        self.color = try container.decode(String.self, forKey: .color)
+        try super.init(from: container.superDecoder())
     }
     
-    override func encode(to encoder: any Encoder) throws {
+    override func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(color, forKey: .color)
         try container.encode(longHair, forKey: .longHair)
-        try super.encode(to: encoder)
+        try container.encode(color, forKey: .color)
+        try super.encode(to: container.superEncoder())
     }
     
     enum CodingKeys: String, CodingKey {
@@ -653,8 +653,6 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
     try decodeEncode(Cat.self, input: CatCSVScramble)
 }
 
-
-
 @Test func testCatSpecialNamesAndColors() async throws {
     let specialCatCSV = """
         Name,Age,Friendly,Color,Long Hair
@@ -674,13 +672,49 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
 }
 
 @Test func testCatNoHeader() async throws {
+    class RegularPet: Codable {
+        let name: String
+        let age: Int
+        @YesNo var friendly: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case name = "Name"
+            case age = "Age"
+            case friendly = "Friendly"
+        }
+    }
+
+    class RegularCat: RegularPet {
+        let color: String
+        let longHair: Bool
+        
+        required init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.longHair = try container.decode(Bool.self, forKey: .longHair)
+            self.color = try container.decode(String.self, forKey: .color)
+            try super.init(from: container.superDecoder())
+        }
+        
+        override func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(longHair, forKey: .longHair)
+            try container.encode(color, forKey: .color)
+            try super.encode(to: container.superEncoder())
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case longHair = "Long Hair"
+            case color = "Color"
+        }
+    }
+
     let catNoHeaderCSV = """
-        red,true,Alice,2,yes
-        white,false,Bob,3,no
-        black,true,Charlie,5,yes
+        true,red,Alice,2,yes
+        false,white,Bob,3,no
+        true,black,Charlie,5,yes
         """ + "\n"
     try decodeEncode(
-        Cat.self,
+        RegularCat.self,
         input: catNoHeaderCSV,
         hasHeaderRow: false,
         encodeWithHeader: false,
@@ -849,8 +883,7 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
         input: SomeTypesHeader)
 }
 
-// TODO:
-@Test func decodingSingleValue() async throws {
+@Test func singleValue() async throws {
     struct SingleValue: Codable {
         let value: String
 
@@ -891,29 +924,9 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
         includesHeader: false)
 }
 
-@Test func encodingSingleValue() async throws {
+// TODO:
+@Test func superCodable() async throws {
 }
 
-@Test func decodingNestedUnkeyedContainer() async throws {
-}
-
-@Test func encodingNestedUnkeyedContainer() async throws {
-}
-
-@Test func decodingNestedKeyedContainer() async throws {
-}
-
-@Test func encodingNestedKeyedContainer() async throws {
-}
-
-@Test func superDecoder() async throws {
-}
-
-@Test func superEncoder() async throws {
-}
-
-@Test func superDecoderKeyed() async throws {
-}
-
-@Test func superEncoderKeyed() async throws {
+@Test func superKeyedCodable() async throws {
 }
