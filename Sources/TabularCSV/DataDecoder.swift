@@ -131,22 +131,25 @@ final class DataDecodingIntrospector {
             return Int32(0) as! T
         case is Int64.Type:
             return Int64(0) as! T
-//            if #available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *) {
-//                case is Int128.Type:
-//                    return Int128(0) as! T
-//        }
         case is UInt.Type:
             return UInt(0) as! T
         case is UInt32.Type:
             return UInt32(0) as! T
         case is UInt64.Type:
             return UInt64(0) as! T
-//            if #available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *) {
-//            case is UInt128.Type:
-//                return UInt128(0) as! T
-//            }
         default:
-            fatalError("Unsupported type for CSVPrimitive.")
+            if #available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *) {
+                switch T.self {
+                case is Int128.Type:
+                    return Int128(0) as! T
+                case is UInt128.Type:
+                    return UInt128(0) as! T
+                default:
+                    fatalError("Unsupported type for CSVPrimitive.")
+                }
+            } else {
+                fatalError("Unsupported type for CSVPrimitive.")
+            }
         }
     }
 }
@@ -281,6 +284,8 @@ fileprivate struct IntrospectedDataKeyedDecoding<Key: CodingKey, Rows: DataRows,
     func decode(_ type: Int16.Type,   forKey key: Key) throws -> Int16   { try decodePrim(type, forKey: key) }
     func decode(_ type: Int32.Type,   forKey key: Key) throws -> Int32   { try decodePrim(type, forKey: key) }
     func decode(_ type: Int64.Type,   forKey key: Key) throws -> Int64   { try decodePrim(type, forKey: key) }
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+    func decode(_ type: Int128.Type,  forKey key: Key) throws -> Int128  { try decodePrim(type, forKey: key) }
     func decode(_ type: UInt.Type,    forKey key: Key) throws -> UInt    { try decodePrim(type, forKey: key) }
     func decode(_ type: UInt8.Type,   forKey key: Key) throws -> UInt8   { try decodePrim(type, forKey: key) }
     func decode(_ type: UInt16.Type,  forKey key: Key) throws -> UInt16  { try decodePrim(type, forKey: key) }
@@ -305,6 +310,8 @@ fileprivate struct IntrospectedDataKeyedDecoding<Key: CodingKey, Rows: DataRows,
     func decodeIfPresent(_ type: Int16.Type,   forKey key: Key) throws -> Int16?   { try decodePrimIfPresent(type, forKey: key) }
     func decodeIfPresent(_ type: Int32.Type,   forKey key: Key) throws -> Int32?   { try decodePrimIfPresent(type, forKey: key) }
     func decodeIfPresent(_ type: Int64.Type,   forKey key: Key) throws -> Int64?   { try decodePrimIfPresent(type, forKey: key) }
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+    func decodeIfPresent(_ type: Int128.Type,  forKey key: Key) throws -> Int128?  { try decodePrimIfPresent(type, forKey: key) }
     func decodeIfPresent(_ type: UInt.Type,    forKey key: Key) throws -> UInt?    { try decodePrimIfPresent(type, forKey: key) }
     func decodeIfPresent(_ type: UInt8.Type,   forKey key: Key) throws -> UInt8?   { try decodePrimIfPresent(type, forKey: key) }
     func decodeIfPresent(_ type: UInt16.Type,  forKey key: Key) throws -> UInt16?  { try decodePrimIfPresent(type, forKey: key) }
@@ -444,6 +451,8 @@ fileprivate struct DataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: Da
     func decode(_ type: Int16.Type,   forKey key: Key) throws -> Int16   { try decodePrim(type, forKey: key) }
     func decode(_ type: Int32.Type,   forKey key: Key) throws -> Int32   { try decodePrim(type, forKey: key) }
     func decode(_ type: Int64.Type,   forKey key: Key) throws -> Int64   { try decodePrim(type, forKey: key) }
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+    func decode(_ type: Int128.Type,  forKey key: Key) throws -> Int128  { try decodePrim(type, forKey: key) }
     func decode(_ type: UInt.Type,    forKey key: Key) throws -> UInt    { try decodePrim(type, forKey: key) }
     func decode(_ type: UInt8.Type,   forKey key: Key) throws -> UInt8   { try decodePrim(type, forKey: key) }
     func decode(_ type: UInt16.Type,  forKey key: Key) throws -> UInt16  { try decodePrim(type, forKey: key) }
@@ -468,6 +477,8 @@ fileprivate struct DataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: Da
     func decodeIfPresent(_ type: Int16.Type,   forKey key: Key) throws -> Int16?   { try decodePrimIfPresent(type, forKey: key) }
     func decodeIfPresent(_ type: Int32.Type,   forKey key: Key) throws -> Int32?   { try decodePrimIfPresent(type, forKey: key) }
     func decodeIfPresent(_ type: Int64.Type,   forKey key: Key) throws -> Int64?   { try decodePrimIfPresent(type, forKey: key) }
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+    func decodeIfPresent(_ type: Int128.Type,  forKey key: Key) throws -> Int128?  { try decodePrimIfPresent(type, forKey: key) }
     func decodeIfPresent(_ type: UInt.Type,    forKey key: Key) throws -> UInt?    { try decodePrimIfPresent(type, forKey: key) }
     func decodeIfPresent(_ type: UInt8.Type,   forKey key: Key) throws -> UInt8?   { try decodePrimIfPresent(type, forKey: key) }
     func decodeIfPresent(_ type: UInt16.Type,  forKey key: Key) throws -> UInt16?  { try decodePrimIfPresent(type, forKey: key) }
@@ -591,6 +602,8 @@ fileprivate struct DataUnkeyedDecoder<Rows: DataRows, Columns: DataColumns>: Unk
     mutating func decode(_ type: Int16.Type   ) throws -> Int16   { try decodePrim(type) }
     mutating func decode(_ type: Int32.Type   ) throws -> Int32   { try decodePrim(type) }
     mutating func decode(_ type: Int64.Type   ) throws -> Int64   { try decodePrim(type) }
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+    mutating func decode(_ type: Int128.Type  ) throws -> Int128  { try decodePrim(type) }
     mutating func decode(_ type: UInt.Type    ) throws -> UInt    { try decodePrim(type) }
     mutating func decode(_ type: UInt8.Type   ) throws -> UInt8   { try decodePrim(type) }
     mutating func decode(_ type: UInt16.Type  ) throws -> UInt16  { try decodePrim(type) }
@@ -613,6 +626,8 @@ fileprivate struct DataUnkeyedDecoder<Rows: DataRows, Columns: DataColumns>: Unk
     mutating func decodeIfPresent(_ type: Int16.Type   ) throws -> Int16?   { try decodePrimIfPresent(type) }
     mutating func decodeIfPresent(_ type: Int32.Type   ) throws -> Int32?   { try decodePrimIfPresent(type) }
     mutating func decodeIfPresent(_ type: Int64.Type   ) throws -> Int64?   { try decodePrimIfPresent(type) }
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+    mutating func decodeIfPresent(_ type: Int128.Type  ) throws -> Int128?  { try decodePrimIfPresent(type) }
     mutating func decodeIfPresent(_ type: UInt.Type    ) throws -> UInt?    { try decodePrimIfPresent(type) }
     mutating func decodeIfPresent(_ type: UInt8.Type   ) throws -> UInt8?   { try decodePrimIfPresent(type) }
     mutating func decodeIfPresent(_ type: UInt16.Type  ) throws -> UInt16?  { try decodePrimIfPresent(type) }
@@ -697,6 +712,8 @@ fileprivate struct DataSingleValueDecoder<Rows: DataRows, Columns: DataColumns>:
     func decode(_ type: Int16.Type  ) throws -> Int16   { try decodePrim(type) }
     func decode(_ type: Int32.Type  ) throws -> Int32   { try decodePrim(type) }
     func decode(_ type: Int64.Type  ) throws -> Int64   { try decodePrim(type) }
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+    func decode(_ type: Int128.Type ) throws -> Int128  { try decodePrim(type) }
     func decode(_ type: UInt.Type   ) throws -> UInt    { try decodePrim(type) }
     func decode(_ type: UInt8.Type  ) throws -> UInt8   { try decodePrim(type) }
     func decode(_ type: UInt16.Type ) throws -> UInt16  { try decodePrim(type) }

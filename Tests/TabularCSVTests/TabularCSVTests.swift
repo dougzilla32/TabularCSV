@@ -828,6 +828,43 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
         includesHeader: true)
 }
 
+@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+@Test func all128Types() async throws {
+    struct AllTypes: Codable {
+        let stringValue: String
+        let boolValue: Bool
+        let doubleValue: Double
+        let floatValue: Float
+        let intValue: Int
+        let int32Value: Int32
+        let int64Value: Int64
+        let int128Value: Int128
+        let uIntValue: UInt
+        let uInt32Value: UInt32
+        let uInt64Value: UInt64
+        let uInt128Value: UInt128
+    }
+    
+    let AllTypesHeader = """
+            stringValue,boolValue,doubleValue,floatValue,intValue,int32Value,int64Value,int128Value,uIntValue,uInt32Value,uInt64Value,uInt128Value
+            """ + "\n"
+    let AllTypesData = """
+            Hello World!,true,3.14159,3.14159,42,42,42,42,42,42,42,42
+            """ + "\n"
+    
+    try decodeEncode(
+        AllTypes.self,
+        input: AllTypesData,
+        hasHeaderRow: false,
+        includesHeader: false)
+
+    try decodeEncode(
+        AllTypes.self,
+        input: AllTypesHeader + AllTypesData,
+        hasHeaderRow: true,
+        includesHeader: true)
+}
+
 @Test func badEncodingHeader() async throws {
     struct SomeTypes: Codable {
         let stringValue: String

@@ -3,6 +3,7 @@
 //  TabularCSV
 //
 //  Created by Doug on 1/4/25.
+//  Copyright © 2024 Doug. All rights reserved.
 //
 
 import TabularData
@@ -28,5 +29,7 @@ extension UInt16: CSVPrimitive {}
 extension UInt32: CSVPrimitive {}
 extension UInt64: CSVPrimitive {}
 
+@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+extension Int128: CSVPrimitive {}
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension UInt128: CSVPrimitive {}

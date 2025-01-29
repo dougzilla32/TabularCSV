@@ -177,6 +177,8 @@ fileprivate struct DataKeyedEncoding<Key: CodingKey, Matrix: DataMatrix>: KeyedE
     mutating func encode(_ value: Int16,    forKey key: Key) throws { encodePrim(value, forKey: key) }
     mutating func encode(_ value: Int32,    forKey key: Key) throws { encodePrim(value, forKey: key) }
     mutating func encode(_ value: Int64,    forKey key: Key) throws { encodePrim(value, forKey: key) }
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+    mutating func encode(_ value: Int128,   forKey key: Key) throws { encodePrim(value, forKey: key) }
     mutating func encode(_ value: UInt,     forKey key: Key) throws { encodePrim(value, forKey: key) }
     mutating func encode(_ value: UInt8,    forKey key: Key) throws { encodePrim(value, forKey: key) }
     mutating func encode(_ value: UInt16,   forKey key: Key) throws { encodePrim(value, forKey: key) }
@@ -198,6 +200,8 @@ fileprivate struct DataKeyedEncoding<Key: CodingKey, Matrix: DataMatrix>: KeyedE
     mutating func encodeIfPresent(_ value: Int16?,   forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
     mutating func encodeIfPresent(_ value: Int32?,   forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
     mutating func encodeIfPresent(_ value: Int64?,   forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+    mutating func encodeIfPresent(_ value: Int128?,  forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
     mutating func encodeIfPresent(_ value: UInt?,    forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
     mutating func encodeIfPresent(_ value: UInt8?,   forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
     mutating func encodeIfPresent(_ value: UInt16?,  forKey key: Key) throws { encodePrimIfPresent(value, forKey: key) }
@@ -253,20 +257,22 @@ fileprivate struct DataUnkeyedEncoding<Matrix: DataMatrix>: UnkeyedEncodingConta
         throw DataEncodingError.invalidUnkeyedValue(nil as String?)
     }
     
-    mutating func encode(_ value: Bool)   throws { try encodePrim(value) }
-    mutating func encode(_ value: String) throws { try encodeString(value) }
-    mutating func encode(_ value: Double) throws { try encodePrim(value) }
-    mutating func encode(_ value: Float)  throws { try encodePrim(value) }
-    mutating func encode(_ value: Int)    throws { try encodePrim(value) }
-    mutating func encode(_ value: Int8)   throws { try encodePrim(value) }
-    mutating func encode(_ value: Int16)  throws { try encodePrim(value) }
-    mutating func encode(_ value: Int32)  throws { try encodePrim(value) }
-    mutating func encode(_ value: Int64)  throws { try encodePrim(value) }
-    mutating func encode(_ value: UInt)   throws { try encodePrim(value) }
-    mutating func encode(_ value: UInt8)  throws { try encodePrim(value) }
-    mutating func encode(_ value: UInt16) throws { try encodePrim(value) }
-    mutating func encode(_ value: UInt32) throws { try encodePrim(value) }
-    mutating func encode(_ value: UInt64) throws { try encodePrim(value) }
+    mutating func encode(_ value: Bool)    throws { try encodePrim(value) }
+    mutating func encode(_ value: String)  throws { try encodeString(value) }
+    mutating func encode(_ value: Double)  throws { try encodePrim(value) }
+    mutating func encode(_ value: Float)   throws { try encodePrim(value) }
+    mutating func encode(_ value: Int)     throws { try encodePrim(value) }
+    mutating func encode(_ value: Int8)    throws { try encodePrim(value) }
+    mutating func encode(_ value: Int16)   throws { try encodePrim(value) }
+    mutating func encode(_ value: Int32)   throws { try encodePrim(value) }
+    mutating func encode(_ value: Int64)   throws { try encodePrim(value) }
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+    mutating func encode(_ value: Int128)  throws { try encodePrim(value) }
+    mutating func encode(_ value: UInt)    throws { try encodePrim(value) }
+    mutating func encode(_ value: UInt8)   throws { try encodePrim(value) }
+    mutating func encode(_ value: UInt16)  throws { try encodePrim(value) }
+    mutating func encode(_ value: UInt32)  throws { try encodePrim(value) }
+    mutating func encode(_ value: UInt64)  throws { try encodePrim(value) }
     @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
     mutating func encode(_ value: UInt128) throws { try encodePrim(value) }
 
@@ -314,22 +320,24 @@ fileprivate struct DataSingleValueEncoding<Matrix: DataMatrix>: SingleValueEncod
         encoder.encodeNil(forKey: key)
     }
     
-    mutating func encode(_ value: Bool)   throws { encodePrim(value) }
-    mutating func encode(_ value: String) throws { encodeString(value) }
-    mutating func encode(_ value: Double) throws { encodePrim(value) }
-    mutating func encode(_ value: Float)  throws { encodePrim(value) }
-    mutating func encode(_ value: Int)    throws { encodePrim(value) }
-    mutating func encode(_ value: Int8)   throws { encodePrim(value) }
-    mutating func encode(_ value: Int16)  throws { encodePrim(value) }
-    mutating func encode(_ value: Int32)  throws { encodePrim(value) }
-    mutating func encode(_ value: Int64)  throws { encodePrim(value) }
-    mutating func encode(_ value: UInt)   throws { encodePrim(value) }
-    mutating func encode(_ value: UInt8)  throws { encodePrim(value) }
-    mutating func encode(_ value: UInt16) throws { encodePrim(value) }
-    mutating func encode(_ value: UInt32) throws { encodePrim(value) }
-    mutating func encode(_ value: UInt64) throws { encodePrim(value) }
+    mutating func encode(_ value: Bool)    throws { encodePrim(value) }
+    mutating func encode(_ value: String)  throws { encodeString(value) }
+    mutating func encode(_ value: Double)  throws { encodePrim(value) }
+    mutating func encode(_ value: Float)   throws { encodePrim(value) }
+    mutating func encode(_ value: Int)     throws { encodePrim(value) }
+    mutating func encode(_ value: Int8)    throws { encodePrim(value) }
+    mutating func encode(_ value: Int16)   throws { encodePrim(value) }
+    mutating func encode(_ value: Int32)   throws { encodePrim(value) }
+    mutating func encode(_ value: Int64)   throws { encodePrim(value) }
     @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-    mutating func encode(_ value: UInt128)throws { encodePrim(value) }
+    mutating func encode(_ value: Int128)  throws { encodePrim(value) }
+    mutating func encode(_ value: UInt)    throws { encodePrim(value) }
+    mutating func encode(_ value: UInt8)   throws { encodePrim(value) }
+    mutating func encode(_ value: UInt16)  throws { encodePrim(value) }
+    mutating func encode(_ value: UInt32)  throws { encodePrim(value) }
+    mutating func encode(_ value: UInt64)  throws { encodePrim(value) }
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+    mutating func encode(_ value: UInt128) throws { encodePrim(value) }
     
     mutating func encode<T: Encodable>(_ value: T) throws {
         if let key {
