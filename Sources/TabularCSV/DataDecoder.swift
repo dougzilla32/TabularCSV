@@ -24,7 +24,7 @@ public struct TypedDecoder<Rows: DataRows, Columns: DataColumns> {
         header: [String]) throws -> T
     {
         let headerIndicies = Dictionary(uniqueKeysWithValues: header.enumerated().map { ($1, $0) })
-        let decoder = DataDecoder<Rows, Columns>(header: headerIndicies, rows: rows, columns: columns, options: options, introspector: nil)
+        let decoder = DataUnkeyedDecoder(header: headerIndicies, rows: rows, columns: columns, options: options, introspector: nil)
         return try T(from: decoder)
     }
 
@@ -45,7 +45,7 @@ public struct TypedDecoder<Rows: DataRows, Columns: DataColumns> {
         var result: (value: T, fields: OrderedSet<CSVField>)?
 
         repeat {
-            let decoder = DataDecoder<Rows, Columns>(header: headerIndicies, rows: rows, columns: columns, options: options, introspector: introspector)
+            let decoder = DataUnkeyedDecoder(header: headerIndicies, rows: rows, columns: columns, options: options, introspector: introspector)
             do {
                 let value = try T(from: decoder)
                 result = (value: value, fields: introspector.fields)
@@ -63,10 +63,11 @@ public struct TypedDecoder<Rows: DataRows, Columns: DataColumns> {
 
 final class DataDecodingIntrospector {
     private(set) var fields = OrderedSet<CSVField>()
-    private(set) var nilKeys: Set<String> = []
+    private var nilKeys: Set<String> = []
     private var decodeNilKey: CodingKey? = nil
-    private(set) var decodeNilKeyMatch: CodingKey? = nil
+    private var decodeNilKeyMatch: CodingKey? = nil
     var currentColumnIndex = 0
+    var currentKey: CodingKey?
     
     func decodeNil(forKey key: CodingKey, rowNumber: Int) throws -> Bool {
         let isNil: Bool
@@ -88,7 +89,7 @@ final class DataDecodingIntrospector {
             decodeNilKeyMatch = nil
         }
         
-        fields.add(.init(name: key?.stringValue ?? "Column 0", type: type.csvType))
+        fields.add(.init(name: (key ?? currentKey)?.stringValue ?? "Column 0", type: type.csvType))
         currentColumnIndex += 1
     }
     
@@ -154,42 +155,30 @@ final class DataDecodingIntrospector {
     }
 }
 
-final class CurrentKey {
-    var key: CodingKey?
-}
-
-struct DataDecoder<Rows: DataRows, Columns: DataColumns>: Decoder {
+fileprivate struct IntrospectedDataKeyedDecoding<Key: CodingKey, Row: DataRow, Columns: DataColumns>: KeyedDecodingContainerProtocol {
     var codingPath: [CodingKey] = []
-    let userInfo: [CodingUserInfoKey: Any] = [:]
+    var allKeys: [Key] = []
+    func contains(_ key: Key) -> Bool { header?[key.stringValue] != nil }
+    
+    private let header: [String: Int]?
+    private let row: Row
+    private let columns: Columns
+    private let rowNumber: Int
+    private let options: ReadingOptions
+    private let introspector: DataDecodingIntrospector
+    private let unkeyedDecoder: Decoder
 
-    let header: [String: Int]?
-    private let rows: Rows
-    let columns: Columns
-    let options: ReadingOptions
-    let introspector: DataDecodingIntrospector?
-
-    private let currentKey = CurrentKey()
-    private var rowIterator: Rows.Iterator
-    var currentRow: Rows.Element?
-    var currentRowIndex: Int
-
-    var rowCount: Int  { rows.count }
-    var rowNumber: Int { currentRowIndex + (options.csvReadingOptions.hasHeaderRow ? 2 : 1) }
-
-    init(header: [String: Int]?, rows: Rows, columns: Columns, options: ReadingOptions, introspector: DataDecodingIntrospector?) {
+    init(header: [String: Int]?, row: Row, columns: Columns, rowNumber: Int, options: ReadingOptions, introspector: DataDecodingIntrospector, unkeyedDecoder: Decoder) {
         self.header = header
-        self.rows = rows
+        self.row = row
         self.columns = columns
+        self.rowNumber = rowNumber
         self.options = options
         self.introspector = introspector
-
-        self.rowIterator = rows.makeIterator()
-        self.currentRow = nil
-        self.currentRowIndex = -1
+        self.unkeyedDecoder = unkeyedDecoder
     }
     
-    func index(forKey key: CodingKey?) -> Int? {
-        guard let key else { return nil }
+    func index(forKey key: CodingKey) -> Int? {
         let index: Int
         if let header {
             guard let mappedIndex = header[key.stringValue] else {
@@ -197,75 +186,9 @@ struct DataDecoder<Rows: DataRows, Columns: DataColumns>: Decoder {
             }
             index = mappedIndex
         } else {
-            index = introspector?.currentColumnIndex ?? -1
+            index = introspector.currentColumnIndex
         }
         return index
-    }
-    
-    func getCurrentKey() -> CodingKey? {
-        currentKey.key
-    }
-    
-    func setCurrentKey(_ key: CodingKey?) {
-        currentKey.key = key
-    }
-    
-    mutating func nextRow() {
-        currentRowIndex += 1
-        currentRow = rowIterator.next()
-        introspector?.resetDecodeNilKey()
-    }
-
-    public func container<Key: CodingKey>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> {
-        guard currentRow != nil else {
-            throw DataDecodingError.decoder("container", rowNumber: rowNumber)
-        }
-
-        let container: KeyedDecodingContainer<Key>
-
-        if introspector != nil {
-            container = KeyedDecodingContainer(
-                IntrospectedDataKeyedDecoding<Key, Rows, Columns>(decoder: self)
-            )
-        } else {
-            container = KeyedDecodingContainer(
-                DataKeyedDecoding<Key, Rows, Columns>(decoder: self)
-            )
-        }
-
-        return container
-    }
-    
-    public func unkeyedContainer() throws -> UnkeyedDecodingContainer {
-        DataUnkeyedDecoder(rowCount: rows.count, decoder: self)
-    }
-    
-    public func singleValueContainer() throws -> SingleValueDecodingContainer {
-        guard currentRow != nil else {
-            throw DataDecodingError.valueNotFound(String.self, rowNumber: rowNumber)
-        }
-        return DataSingleValueDecoder(decoder: self)
-    }
-}
-
-fileprivate struct IntrospectedDataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: DataColumns>: KeyedDecodingContainerProtocol {
-    var codingPath: [CodingKey] = []
-    var allKeys: [Key] = []
-    func contains(_ key: Key) -> Bool { header?[key.stringValue] != nil }
-    
-    private let decoder: DataDecoder<Rows, Columns>
-
-    private var header: [String: Int]? { decoder.header }
-    private var options: ReadingOptions { decoder.options }
-    private var introspector: DataDecodingIntrospector { decoder.introspector! }
-    private var currentRow: Rows.Element { decoder.currentRow! }
-    private var rowNumber: Int { decoder.rowNumber }
-    private func index(forKey key: CodingKey) -> Int? { decoder.index(forKey: key) }
-    private func getCurrentKey() -> CodingKey? { decoder.getCurrentKey() }
-    private func setCurrentKey(_ key: CodingKey?) { decoder.setCurrentKey(key) }
-
-    init(decoder: DataDecoder<Rows, Columns>) {
-        self.decoder = decoder
     }
     
     func decodeNil(forKey key: Key) throws -> Bool {
@@ -325,7 +248,7 @@ fileprivate struct IntrospectedDataKeyedDecoding<Key: CodingKey, Rows: DataRows,
     }
 
     private func decodeValue<T: Decodable>(_ type: T.Type, forKey key: Key, isRequired: Bool) throws -> T? {
-        if let parser = decoder.options.parserForType(type) {
+        if let parser = options.parserForType(type) {
             guard let string = try isRequired ? decodeString(forKey: key) : decodeStringIfPresent(forKey: key), !string.isEmpty || !isRequired else {
                 return nil
             }
@@ -340,25 +263,23 @@ fileprivate struct IntrospectedDataKeyedDecoding<Key: CodingKey, Rows: DataRows,
             return nil
         }
 
-        if !isRequired && currentRow.isNil(at: index) && !options.nilAsEmptyString {
+        if !isRequired && row.isNil(at: index) && !options.nilAsEmptyString {
             return nil
         }
         
-        defer { setCurrentKey(nil) }
-        setCurrentKey(key)
-
+        let decoder = DataSingleValueDecoder(index: index, key: key, row: row, rowNumber: rowNumber, options: options, introspector: introspector)
         do {
             return try T(from: decoder)
         } catch CodableStringError.invalidFormat(let string) {
-            throw DataDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: decoder.rowNumber)
+            throw DataDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
         }
     }
 
     private func decodePrim<T: CSVPrimitive>(_ type: T.Type, forKey key: CodingKey) throws -> T {
-        guard decoder.index(forKey: key) != nil else {
-            throw DataDecodingError.valueNotFound(T.self, forKey: key, rowNumber: decoder.rowNumber)
+        guard index(forKey: key) != nil else {
+            throw DataDecodingError.valueNotFound(T.self, forKey: key, rowNumber: rowNumber)
         }
-        try introspector.addCSVField(key: key, type: type, rowNumber: decoder.rowNumber)
+        try introspector.addCSVField(key: key, type: type, rowNumber: rowNumber)
         return DataDecodingIntrospector.primitivePlaceholder(type)
     }
     
@@ -375,7 +296,7 @@ fileprivate struct IntrospectedDataKeyedDecoding<Key: CodingKey, Rows: DataRows,
             throw DataDecodingError.valueNotFound(String.self, forKey: key, rowNumber: rowNumber)
         }
         try introspector.addCSVField(key: key, type: String.self, rowNumber: rowNumber)
-        var value = currentRow[index, String.self, options]
+        var value = row[index, String.self, options]
         if value == nil, options.nilAsEmptyString {
             value = ""
         }
@@ -390,7 +311,7 @@ fileprivate struct IntrospectedDataKeyedDecoding<Key: CodingKey, Rows: DataRows,
             return nil
         }
         try introspector.addCSVField(key: key, type: String.self, rowNumber: rowNumber)
-        return currentRow[index, String.self, options] ?? (options.nilAsEmptyString ? "" : nil)
+        return row[index, String.self, options] ?? (options.nilAsEmptyString ? "" : nil)
     }
     
     func nestedContainer<NestedKey: CodingKey>(
@@ -405,7 +326,7 @@ fileprivate struct IntrospectedDataKeyedDecoding<Key: CodingKey, Rows: DataRows,
     }
     
     func superDecoder() throws -> any Decoder {
-        decoder
+        unkeyedDecoder
     }
     
     func superDecoder(forKey key: Key) throws -> any Decoder {
@@ -413,29 +334,30 @@ fileprivate struct IntrospectedDataKeyedDecoding<Key: CodingKey, Rows: DataRows,
     }
 }
 
-fileprivate struct DataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: DataColumns>: KeyedDecodingContainerProtocol {
+fileprivate struct DataKeyedDecoding<Key: CodingKey, Row: DataRow, Columns: DataColumns>: KeyedDecodingContainerProtocol {
     var codingPath: [CodingKey] = []
     var allKeys: [Key] = []
     func contains(_ key: Key) -> Bool { header[key.stringValue] != nil }
     
-    private let decoder: DataDecoder<Rows, Columns>
+    private let header: [String: Int]
+    private let row: Row
+    private let columns: Columns
+    private let rowNumber: Int
+    private let options: ReadingOptions
+    private let unkeyedDecoder: Decoder
 
-    private var header: [String: Int] { decoder.header! }
-    private var columns: Columns { decoder.columns }
-    private var options: ReadingOptions { decoder.options }
-    private var introspector: DataDecodingIntrospector { decoder.introspector! }
-    private var currentRow: Rows.Element { decoder.currentRow! }
-    private var rowNumber: Int { decoder.rowNumber }
-    private func getCurrentKey() -> CodingKey? { decoder.getCurrentKey() }
-    private func setCurrentKey(_ key: CodingKey?) { decoder.setCurrentKey(key) }
-
-    init(decoder: DataDecoder<Rows, Columns>) {
-        self.decoder = decoder
+    init(header: [String: Int], row: Row, columns: Columns, rowNumber: Int, options: ReadingOptions, unkeyedDecoder: Decoder) {
+        self.header = header
+        self.row = row
+        self.columns = columns
+        self.rowNumber = rowNumber
+        self.options = options
+        self.unkeyedDecoder = unkeyedDecoder
     }
     
     func decodeNil(forKey key: Key) throws -> Bool {
         guard let index = header[key.stringValue] else { return true }
-        var isNil = currentRow.isNil(at: index)
+        var isNil = row.isNil(at: index)
         if isNil, options.nilAsEmptyString, columns.type(at: index) == String.self {
             isNil = false
         }
@@ -506,13 +428,11 @@ fileprivate struct DataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: Da
             return nil
         }
 
-        if !isRequired && currentRow.isNil(at: index) && !options.nilAsEmptyString {
+        if !isRequired && row.isNil(at: index) && !options.nilAsEmptyString {
             return nil
         }
 
-        defer { setCurrentKey(nil) }
-        setCurrentKey(key)
-
+        let decoder = DataSingleValueDecoder(index: index, key: key, row: row, rowNumber: rowNumber, options: options, introspector: nil)
         do {
             return try T(from: decoder)
         } catch CodableStringError.invalidFormat(let string) {
@@ -524,7 +444,7 @@ fileprivate struct DataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: Da
         guard let index = header[key.stringValue] else {
             throw DataDecodingError.valueNotFound(T.self, forKey: key, rowNumber: rowNumber)
         }
-        guard let string = currentRow[index, String.self, options] else {
+        guard let string = row[index, String.self, options] else {
             throw DataDecodingError.valueNotFound(type, forKey: key, rowNumber: rowNumber)
         }
         guard let value = T(string) else {
@@ -535,14 +455,14 @@ fileprivate struct DataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: Da
     
     private func decodePrimIfPresent<T: CSVPrimitive>(_ type: T.Type, forKey key: CodingKey) throws -> T? {
         guard let index = header[key.stringValue] else { return nil }
-        return currentRow[index, type, options]
+        return row[index, type, options]
     }
     
     private func decodeString(forKey key: CodingKey) throws -> String {
         guard let index = header[key.stringValue] else {
             throw DataDecodingError.valueNotFound(String.self, forKey: key, rowNumber: rowNumber)
         }
-        var value = currentRow[index, String.self, options]
+        var value = row[index, String.self, options]
         if value == nil, options.nilAsEmptyString {
             value = ""
         }
@@ -554,7 +474,7 @@ fileprivate struct DataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: Da
     
     private func decodeStringIfPresent(forKey key: CodingKey) throws -> String? {
         guard let index = header[key.stringValue] else { return nil }
-        return currentRow[index, String.self, options] ?? (options.nilAsEmptyString ? "" : nil)
+        return row[index, String.self, options] ?? (options.nilAsEmptyString ? "" : nil)
     }
     
     func nestedContainer<NestedKey: CodingKey>(
@@ -569,7 +489,7 @@ fileprivate struct DataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: Da
     }
     
     func superDecoder() throws -> any Decoder {
-        decoder
+        unkeyedDecoder
     }
     
     func superDecoder(forKey key: Key) throws -> any Decoder {
@@ -577,18 +497,83 @@ fileprivate struct DataKeyedDecoding<Key: CodingKey, Rows: DataRows, Columns: Da
     }
 }
 
-fileprivate struct DataUnkeyedDecoder<Rows: DataRows, Columns: DataColumns>: UnkeyedDecodingContainer {
+fileprivate struct DataUnkeyedDecoder<Rows: DataRows, Columns: DataColumns>: Decoder, UnkeyedDecodingContainer {
     var codingPath: [CodingKey] = []
-    
-    var count: Int? { decoder.rowCount }
-    var isAtEnd: Bool { currentIndex >= decoder.rowCount }
-    var currentIndex: Int { decoder.currentRowIndex + 1 }
-    private var rowNumber: Int { decoder.rowNumber }
-    
-    private var decoder: DataDecoder<Rows, Columns>
+    let userInfo: [CodingUserInfoKey: Any] = [:]
 
-    init(rowCount: Int, decoder: DataDecoder<Rows, Columns>) {
-        self.decoder = decoder
+    var count: Int? { rows.count }
+    var isAtEnd: Bool { currentIndex >= rows.count }
+    var currentIndex: Int { currentRowIndex + 1 }
+
+    private let header: [String: Int]?
+    private let rows: Rows
+    private let columns: Columns
+    private let options: ReadingOptions
+    private let introspector: DataDecodingIntrospector?
+    private var rowIterator: Rows.Iterator
+    private var currentRow: Rows.Element?
+    private var currentRowIndex: Int = -1
+    private var rowNumber: Int { currentRowIndex + (options.csvReadingOptions.hasHeaderRow ? 2 : 1) }
+
+    init(header: [String: Int]?, rows: Rows, columns: Columns, options: ReadingOptions, introspector: DataDecodingIntrospector?) {
+        self.header = header
+        self.rows = rows
+        self.columns = columns
+        self.options = options
+        self.introspector = introspector
+        self.rowIterator = rows.makeIterator()
+    }
+    
+    mutating func nextRow() {
+        currentRowIndex += 1
+        currentRow = rowIterator.next()
+        introspector?.resetDecodeNilKey()
+    }
+
+    public func container<Key: CodingKey>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> {
+        guard let row = currentRow else {
+            throw DataDecodingError.decoder("container", rowNumber: rowNumber)
+        }
+
+        let container: KeyedDecodingContainer<Key>
+
+        if let introspector {
+            container = KeyedDecodingContainer(
+                IntrospectedDataKeyedDecoding(
+                    header: header,
+                    row: row,
+                    columns: columns,
+                    rowNumber: rowNumber,
+                    options: options,
+                    introspector: introspector,
+                    unkeyedDecoder: self
+                )
+            )
+        } else {
+            container = KeyedDecodingContainer(
+                DataKeyedDecoding(
+                    header: header!,
+                    row: row,
+                    columns: columns,
+                    rowNumber: rowNumber,
+                    options: options,
+                    unkeyedDecoder: self
+                )
+            )
+        }
+
+        return container
+    }
+    
+    public func unkeyedContainer() throws -> UnkeyedDecodingContainer {
+        self
+    }
+    
+    public func singleValueContainer() throws -> SingleValueDecodingContainer {
+        guard let currentRow else {
+            throw DataDecodingError.valueNotFound(String.self, rowNumber: rowNumber)
+        }
+        return DataSingleValueDecoder(index: 0, key: nil, row: currentRow, rowNumber: rowNumber, options: options, introspector: introspector)
     }
     
     mutating func decodeNil() throws -> Bool { false }
@@ -613,8 +598,8 @@ fileprivate struct DataUnkeyedDecoder<Rows: DataRows, Columns: DataColumns>: Unk
     mutating func decode(_ type: UInt128.Type ) throws -> UInt128 { try decodePrim(type) }
 
     mutating func decode<T: Decodable>(_ type: T.Type) throws -> T {
-        decoder.nextRow()
-        return try T(from: decoder)
+        nextRow()
+        return try T(from: self)
     }
 
     mutating func decodeIfPresent(_ type: Bool.Type    ) throws -> Bool?    { try decodePrimIfPresent(type) }
@@ -637,8 +622,8 @@ fileprivate struct DataUnkeyedDecoder<Rows: DataRows, Columns: DataColumns>: Unk
     mutating func decodeIfPresent(_ type: UInt128.Type ) throws -> UInt128? { try decodePrimIfPresent(type) }
 
     mutating func decodeIfPresent<T: Decodable>(_ type: T.Type) throws -> T? {
-        decoder.nextRow()
-        return try T(from: decoder)
+        nextRow()
+        return try T(from: self)
     }
     
     private mutating func decodePrim<T: CSVPrimitive>(_ type: T.Type) throws -> T {
@@ -666,25 +651,28 @@ fileprivate struct DataUnkeyedDecoder<Rows: DataRows, Columns: DataColumns>: Unk
     }
     
     mutating func superDecoder() throws -> Decoder {
-        decoder
+        self
     }
 }
 
-fileprivate struct DataSingleValueDecoder<Rows: DataRows, Columns: DataColumns>: Decoder, SingleValueDecodingContainer {
+fileprivate struct DataSingleValueDecoder<Row: DataRow>: Decoder, SingleValueDecodingContainer {
     var codingPath: [CodingKey] = []
     var userInfo: [CodingUserInfoKey: Any] { [:] }
 
-    private let decoder: DataDecoder<Rows, Columns>
+    private let index: Int
+    private let key: CodingKey?
+    private let row: Row
+    private let rowNumber: Int
+    private let options: ReadingOptions
+    private let introspector: DataDecodingIntrospector?
     
-    private var options: ReadingOptions { decoder.options }
-    private var introspector: DataDecodingIntrospector? { decoder.introspector }
-    private var currentRow: Rows.Element { decoder.currentRow! }
-    private var rowNumber: Int { decoder.rowNumber }
-    private var currentKey: CodingKey? { decoder.getCurrentKey() }
-    private var index: Int { decoder.index(forKey: currentKey) ?? 0 }
-
-    init(decoder: DataDecoder<Rows, Columns>) {
-        self.decoder = decoder
+    init(index: Int, key: CodingKey?, row: Row, rowNumber: Int, options: ReadingOptions, introspector: DataDecodingIntrospector?) {
+        self.index = index
+        self.key = key
+        self.row = row
+        self.rowNumber = rowNumber
+        self.options = options
+        self.introspector = introspector
     }
 
     func container<Key>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> {
@@ -700,7 +688,7 @@ fileprivate struct DataSingleValueDecoder<Rows: DataRows, Columns: DataColumns>:
     }
 
     func decodeNil() -> Bool {
-        return currentRow.isNil(at: index)
+        row.isNil(at: index)
     }
 
     func decode(_ type: Bool.Type   ) throws -> Bool    { try decodePrim(type) }
@@ -726,7 +714,7 @@ fileprivate struct DataSingleValueDecoder<Rows: DataRows, Columns: DataColumns>:
         if let parser = options.parserForType(type) {
             let string = try decodeString()
             guard let value = parser(string) else {
-                throw DataDecodingError.dataCorrupted(string: string, forKey: currentKey, rowNumber: rowNumber)
+                throw DataDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
             }
             return value
         }
@@ -734,27 +722,27 @@ fileprivate struct DataSingleValueDecoder<Rows: DataRows, Columns: DataColumns>:
         do {
             return try T(from: self)
         } catch CodableStringError.invalidFormat(let string) {
-            throw DataDecodingError.dataCorrupted(string: string, forKey: currentKey, rowNumber: rowNumber)
+            throw DataDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
         }
     }
 
     private func decodePrim<T: CSVPrimitive>(_ type: T.Type) throws -> T {
-        guard let value = currentRow[index, type, options] else {
-            throw DataDecodingError.valueNotFound(T.self, forKey: currentKey, rowNumber: rowNumber)
+        guard let value = row[index, type, options] else {
+            throw DataDecodingError.valueNotFound(T.self, forKey: key, rowNumber: rowNumber)
         }
-        try introspector?.addCSVField(key: currentKey, type: type, rowNumber: rowNumber)
+        try introspector?.addCSVField(key: key, type: type, rowNumber: rowNumber)
         return value
     }
     
     private func decodeString() throws -> String {
-        var value = currentRow[index, String.self, options]
+        var value = row[index, String.self, options]
         if options.nilAsEmptyString, value == nil {
             value = ""
         }
         guard let value else {
-            throw DataDecodingError.valueNotFound(String.self, forKey: currentKey, rowNumber: rowNumber)
+            throw DataDecodingError.valueNotFound(String.self, forKey: key, rowNumber: rowNumber)
         }
-        try introspector?.addCSVField(key: currentKey, type: String.self, rowNumber: rowNumber)
+        try introspector?.addCSVField(key: key, type: String.self, rowNumber: rowNumber)
         return value
     }
 }

@@ -9,7 +9,7 @@
 import Foundation
 import TabularData
 
-// MARK: Data rows and columns
+// MARK: Data rows and columns protocols
 
 public protocol DataRow {
     var count: Int { get }
@@ -22,7 +22,6 @@ public protocol DataRows: Collection where Element: DataRow { }
 public protocol DataColumns {
     func type(at position: Int) -> CSVPrimitive.Type
 }
-
 
 // MARK: DataFrame rows and columns
 
@@ -43,7 +42,6 @@ extension Array: DataColumns where Element == AnyColumn {
         self[position].wrappedElementType as! CSVPrimitive.Type
     }
 }
-
 
 // MARK: String rows and columns
 
@@ -71,31 +69,9 @@ public struct StringColumns: DataColumns {
     }
 }
 
+// MARK: CSVField
 
 struct CSVField: Hashable {
     let name: String
     let type: CSVType
-}
-
-public enum RowTransform {
-    case none
-    case permutation([Int?])
-    case map([String: Int]?)
-    
-    init(_ permutation: [Int?]?) {
-        if let permutation {
-            self = .permutation(permutation)
-        } else {
-            self = .none
-        }
-    }
-    
-    init(_ keys: [String]?) {
-        if let keys {
-            let mapping = Dictionary(uniqueKeysWithValues: keys.enumerated().map { ($1, $0) })
-            self = .map(mapping)
-        } else {
-            self = .map(nil)
-        }
-    }
 }
