@@ -138,7 +138,17 @@ public struct ReadingOptions {
     }
     
     func parserForType<T>(_ type: T.Type) -> ((String) -> T?)? {
-        if type == Data.self {
+        if type == Date.self {
+            let dateParser: (String) -> Date? = { string in
+                for parser in dateParsers {
+                    if let date = parser(string) {
+                        return date
+                    }
+                }
+                return nil
+            }
+            return dateParser as? (String) -> T?
+        } else if type == Data.self {
             return dataParser as? (String) -> T?
         } else if type == Decimal.self {
             return decimalParser as? (String) -> T?

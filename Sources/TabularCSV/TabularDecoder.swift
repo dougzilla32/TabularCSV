@@ -130,7 +130,7 @@ public struct TabularDecoder {
         }
 
         let dataFrameDecoder = DataFrameDecoder(options: options)
-        let rows = try dataFrameDecoder.decode(type, rows: dataFrame.rows, columns: dataFrame.columns, header: columnInfo.header ?? [])
+        let rows = try dataFrameDecoder.decode(type, rows: dataFrame.rows, header: columnInfo.header ?? [])
         return (rows: rows, header: columnInfo.header)
     }
     
@@ -172,7 +172,7 @@ public struct TabularDecoder {
             let row = dataFrame.rows[0].map { $0.map(String.init(describing:)) }
             let typeDecoder = StringDecoder(options: options)
             do {
-                return try typeDecoder.decodeTypes(type, rows: [row], columns: StringColumns(), header: csvHeader)
+                return try typeDecoder.decodeTypes(type, rows: [row], header: csvHeader)
             } catch {
                 throw DataDecodingError.headerIsNeeded(error: error)
             }

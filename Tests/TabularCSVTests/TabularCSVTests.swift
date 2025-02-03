@@ -44,6 +44,14 @@ public struct Nationality: CodableNilAsEmptyString {
     }
 }
 
+@propertyWrapper
+public struct NationalityOptional: OptionalCodableNilAsEmptyString {
+    public typealias CodableStringType = Nationality
+    public var wrappedValue: String?
+    public init(wrappedValue: String?) { self.wrappedValue = wrappedValue }
+}
+
+
 let PersonCSVHeader = "name,age,height,tall,nationality\n"
 let PersonCSVRows = """
     Alice,23,5.6,yes,UK
@@ -863,6 +871,37 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
         input: AllTypesHeader + AllTypesData,
         hasHeaderRow: true,
         includesHeader: true)
+}
+
+@Test func nilEncoding() async throws {
+    struct AllTypes: Codable {
+        let stringValue: String
+        let boolValue: Bool?
+        let doubleValue: Double?
+        let floatValue: Float?
+        let intValue: Int?
+        let int32Value: Int32?
+        let int64Value: Int64?
+        let uIntValue: UInt?
+        let uInt32Value: UInt32?
+        let uInt64Value: UInt64?
+        @YesNoOptional var tall: Bool?
+        @NationalityOptional var nationality: String?
+    }
+
+    let AllTypesHeader = """
+            stringValue,boolValue,doubleValue,floatValue,intValue,int32Value,int64Value,uIntValue,uInt32Value,uInt64Value,tall,nationnality
+            """ + "\n"
+    let AllTypesData = """
+            ,,,,,,,,,,,
+            """ + "\n"
+
+    try decodeEncode(
+        AllTypes.self,
+        input: AllTypesHeader + AllTypesData,
+        hasHeaderRow: true,
+        includesHeader: true,
+        readingOptions: .init(nilAsEmptyString: true))
 }
 
 @Test func badEncodingHeader() async throws {

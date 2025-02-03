@@ -9,63 +9,87 @@
 import Foundation
 import TabularData
 
-// MARK: Data rows and columns protocols
-
-public protocol DataRow {
-    var count: Int { get }
-    subscript<T: LosslessStringConvertible>(position: Int, type: T.Type, options: ReadingOptions) -> T? { get }
-    func isNil(at position: Int) -> Bool
-}
+// MARK: Data rows protocol
 
 public protocol DataRows: Collection where Element: DataRow { }
 
-public protocol DataColumns {
-    func type(at position: Int) -> CSVPrimitive.Type
+public protocol DataRow {
+    var count: Int { get }
+    func string(at index: Int, options: ReadingOptions) -> String?
 }
 
-// MARK: DataFrame rows and columns
-
-extension DataFrame.Row: DataRow {
-    public subscript<T: LosslessStringConvertible>(position: Int, type: T.Type, options: ReadingOptions) -> T? {
-        self[position, type]
+extension DataRow {
+    public func decodePrim<T: LosslessStringConvertible>(at index: Int, type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int, options: ReadingOptions) throws -> T {
+        guard let string = string(at: index, options: options) else {
+            throw DataDecodingError.valueNotFound(type, forKey: key, rowNumber: rowNumber)
+        }
+        return try decodePrim(string: string, type: type, forKey: key, rowNumber: rowNumber, options: options)
     }
     
-    public func isNil(at position: Int) -> Bool {
-        self[position] == nil
+    public func decodePrimIfPresent<T: LosslessStringConvertible>(at index: Int, type: T.Type, forKey key: CodingKey? = nil, rowNumber: Int, options: ReadingOptions) throws -> T? {
+        guard let string = string(at: index, options: options) else {
+            return nil
+        }
+        return try decodePrim(string: string, type: type, forKey: key, rowNumber: rowNumber, options: options)
+    }
+    
+    public func decodePrim<T: LosslessStringConvertible>(string: String, type: T.Type, forKey key: CodingKey?, rowNumber: Int, options: ReadingOptions) throws -> T {
+        if type == Bool.self {
+            if options.trueEncodings.contains(string) { return true as! T }
+            if options.falseEncodings.contains(string) { return false as! T }
+        }
+        guard let value = T(string) else {
+            throw DataDecodingError.dataCorrupted(string: string, forKey: key, rowNumber: rowNumber)
+        }
+        return value
+    }
+    
+}
+
+extension DataRow {
+    public func decodeString(at index: Int, forKey key: CodingKey? = nil, rowNumber: Int, options: ReadingOptions) throws -> String {
+        var string = string(at: index, options: options)
+        if string == nil, options.nilAsEmptyString {
+            string = ""
+        }
+        guard let string else {
+            throw DataDecodingError.valueNotFound(String.self, forKey: key, rowNumber: rowNumber)
+        }
+        return string
+    }
+    
+    public func decodeStringIfPresent(at index: Int, forKey key: CodingKey? = nil, rowNumber: Int, options: ReadingOptions) throws -> String? {
+        var string = string(at: index, options: options)
+        if string == nil, options.nilAsEmptyString {
+            string = ""
+        }
+        guard let string else {
+            return nil
+        }
+        return string
     }
 }
+
+// MARK: DataFrame rows
 
 extension DataFrame.Rows: DataRows { }
 
-extension Array: DataColumns where Element == AnyColumn {
-    public func type(at position: Int) -> CSVPrimitive.Type {
-        self[position].wrappedElementType as! CSVPrimitive.Type
+extension DataFrame.Row: DataRow {
+    public func string(at index: Int, options: ReadingOptions) -> String? {
+        self[index, String.self]
     }
 }
 
-// MARK: String rows and columns
-
-extension Array: DataRow where Element == String? {
-    public subscript<T: LosslessStringConvertible>(position: Int, type: T.Type, options: ReadingOptions) -> T? {
-        guard let string = self[position] else { return nil }
-        if options.nilEncodings.contains(string) { return nil }
-        if type == Bool.self {
-            if options.trueEncodings.contains(string) { return true as? T }
-            if options.falseEncodings.contains(string) { return false as? T }
-        }
-        return T(string)
-    }
-    
-    public func isNil(at position: Int) -> Bool {
-        self[position] == nil
-    }
-}
+// MARK: String rows
 
 extension Array: DataRows where Element == [String?] { }
 
-public struct StringColumns: DataColumns {
-    public func type(at position: Int) -> CSVPrimitive.Type {
-        String.self
+extension Array: DataRow where Element == String? {
+    public func string(at index: Int, options: ReadingOptions) -> String? {
+        guard let value = self[index], !options.nilEncodings.contains(value) else {
+            return nil
+        }
+        return value
     }
 }
 
