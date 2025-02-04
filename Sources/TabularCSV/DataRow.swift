@@ -1,5 +1,5 @@
 //
-//  RowCollection.swift
+//  DataRow.swift
 //  TabularCSV
 //
 //  Created by Doug on 12/16/24.

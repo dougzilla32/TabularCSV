@@ -999,10 +999,3 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
         hasHeaderRow: false,
         includesHeader: false)
 }
-
-// TODO:
-@Test func superCodable() async throws {
-}
-
-@Test func superKeyedCodable() async throws {
-}

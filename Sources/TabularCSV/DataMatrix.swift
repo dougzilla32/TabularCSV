@@ -1,5 +1,5 @@
 //
-//  VectorCollection.swift
+//  DataMatrix.swift
 //  TabularCSV
 //
 //  Created by Doug on 12/16/24.
