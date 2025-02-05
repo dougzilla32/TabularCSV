@@ -43,7 +43,6 @@ extension DataRow {
         }
         return value
     }
-    
 }
 
 extension DataRow {

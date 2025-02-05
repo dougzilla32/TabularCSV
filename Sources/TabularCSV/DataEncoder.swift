@@ -1,5 +1,5 @@
 //
-//  TypedEncoder.swift
+//  DataEncoder.swift
 //  TabularCSV
 //
 //  Created by Doug on 12/18/24.

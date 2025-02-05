@@ -236,9 +236,8 @@ public struct YesNoOptional: OptionalCodableString {
 
 // MARK: - Coders for enum types where `rawValue` is a String
 
-// A property wrapper for encoding and decoding a non-optional enum whose `rawValue` is a `String`.
 @propertyWrapper
-public struct EnumCodable<T: RawRepresentable>: CodableString where T.RawValue == String {
+public struct StringEnumCoder<T: RawRepresentable>: CodableString where T.RawValue == String {
     public typealias ValueType = T
     public var wrappedValue: T
     public init(wrappedValue: T) { self.wrappedValue = wrappedValue }
@@ -247,10 +246,9 @@ public struct EnumCodable<T: RawRepresentable>: CodableString where T.RawValue =
     public static func encode(_ value: T) -> String { value.rawValue }
 }
 
-// A property wrapper for encoding and decoding an optional enum whose `rawValue` is a `String`.
 @propertyWrapper
-public struct EnumOptionalCodable<T: RawRepresentable>: OptionalCodableString where T.RawValue == String {
-    public typealias CodableStringType = EnumCodable<T>
+public struct StringEnumOptionalCoder<T: RawRepresentable>: OptionalCodableString where T.RawValue == String {
+    public typealias CodableStringType = StringEnumCoder<T>
     public var wrappedValue: T?
     public init(wrappedValue: T?) { self.wrappedValue = wrappedValue }
 }
