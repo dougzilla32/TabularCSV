@@ -46,11 +46,11 @@ public struct TabularEncoder {
         includesHeader: Bool,
         overrideHeader: [String]?) throws where T.Element: Encodable
     {
-        let columnInfo = try introspectColumns(value, fileOrData: fileOrData, includesHeader: includesHeader, overrideHeader: overrideHeader)
+        let header = try overrideHeader ?? introspectColumns(value)
         let headerOptions = self.options.includesHeader(includesHeader)
         
         let dataFrameEncoder = DataFrameEncoder(options: headerOptions.writingOptions)
-        let columns = try dataFrameEncoder.encode(value, header: columnInfo.header ?? []).map { $0.eraseToAnyColumn() }
+        let columns = try dataFrameEncoder.encode(value, header: header).map { $0.eraseToAnyColumn() }
 
         switch fileOrData {
         case .file(let filePath):
@@ -61,20 +61,10 @@ public struct TabularEncoder {
     }
 
     private func introspectColumns<T: Encodable & Collection>(
-        _ value: T,
-        fileOrData: FileOrData,
-        includesHeader: Bool,
-        overrideHeader: [String]?) throws -> ColumnInfo where T.Element: Encodable
+        _ value: T) throws -> [String] where T.Element: Encodable
     {
-        if let overrideHeader {
-            return ColumnInfo(header: overrideHeader, types: nil)
-        }
-
         let typeEncoder = StringEncoder(options: options)
         let typeEncoderResult = try typeEncoder.encodeWithHeaderAndTypes([value.first], header: nil)
-        
-        return ColumnInfo(
-            header: typeEncoderResult.fields.all().map(\.name),
-            types: nil)
+        return typeEncoderResult.fields.all().map(\.name)
     }
 }
