@@ -89,7 +89,7 @@ public struct ReadingOptions {
     
     public var dataParser: ((String) -> Data?)?
     
-    public var decimalParser: ((String) -> Decimal?)?
+    public var decimalParser: ((String) -> Decimal?) = { Decimal(string: $0) }
     
     public var urlParser: ((String) -> URL?)?
     
@@ -124,7 +124,7 @@ public struct ReadingOptions {
             escapeCharacter: escapeCharacter
         )
         self.dataParser = dataParser
-        self.decimalParser = decimalParser
+        if let decimalParser { self.decimalParser = decimalParser }
         self.urlParser = urlParser
         self.nilAsEmptyString = nilAsEmptyString
     }

@@ -206,7 +206,7 @@ public struct OneZeroOptional: OptionalCodableString {
 
 @propertyWrapper
 public struct OnOff: CodableBool {
-    public let wrappedValue: Bool
+    public var wrappedValue: Bool
     public init(wrappedValue: Bool) { self.wrappedValue = wrappedValue }
     public static let trueValues: OrderedSet<String> = ["on", "On", "ON"]
     public static let falseValues: OrderedSet<String> = ["off", "Off", "OFF"]
@@ -221,10 +221,10 @@ public struct OnOffOptional: OptionalCodableString {
 
 @propertyWrapper
 public struct YesNo: CodableBool {
-    public let wrappedValue: Bool
+    public var wrappedValue: Bool
     public init(wrappedValue: Bool) { self.wrappedValue = wrappedValue }
-    public static let trueValues: OrderedSet<String> = ["yes", "Yes", "YES"]
-    public static let falseValues: OrderedSet<String> = ["no", "No", "NO"]
+    public static let trueValues: OrderedSet<String> = ["yes", "Yes", "YES", "Y"]
+    public static let falseValues: OrderedSet<String> = ["no", "No", "NO", "N"]
 }
 
 @propertyWrapper
@@ -238,7 +238,6 @@ public struct YesNoOptional: OptionalCodableString {
 
 @propertyWrapper
 public struct StringEnumCoder<T: RawRepresentable>: CodableString where T.RawValue == String {
-    public typealias ValueType = T
     public var wrappedValue: T
     public init(wrappedValue: T) { self.wrappedValue = wrappedValue }
 
@@ -257,7 +256,7 @@ public struct StringEnumOptionalCoder<T: RawRepresentable>: OptionalCodableStrin
 
 @propertyWrapper
 public struct DateAndTimeCodable: CodableString, Hashable {
-    public let wrappedValue: Date
+    public var wrappedValue: Date
     public init(wrappedValue: Date) { self.wrappedValue = wrappedValue }
 
     private static let formatter: DateFormatter = {
@@ -273,8 +272,7 @@ public struct DateAndTimeCodable: CodableString, Hashable {
 
 @propertyWrapper
 public struct DateCodable: CodableString, Hashable {
-    public typealias ValueType = Date
-    public let wrappedValue: Date
+    public var wrappedValue: Date
     public init(wrappedValue: Date) { self.wrappedValue = wrappedValue }
     
     private static let formatter: DateFormatter = {

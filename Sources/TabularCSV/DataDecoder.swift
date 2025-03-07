@@ -396,7 +396,7 @@ fileprivate struct DataKeyedDecoding<Key: CodingKey, Row: DataRow>: KeyedDecodin
     
     private func decodeValue<T: Decodable>(_ type: T.Type, forKey key: Key, isRequired: Bool) throws -> T? {
         if let parser = options.parserForType(type) {
-            guard let string = try isRequired ? decodeString(forKey: key) : decodeStringIfPresent(forKey: key), !string.isEmpty || !isRequired else {
+            guard let string = try isRequired ? decodeString(forKey: key) : decodeStringIfPresent(forKey: key), !string.isEmpty else {
                 return nil
             }
             guard let parsedValue = parser(string) else {

@@ -77,7 +77,7 @@ public struct WritingOptions {
     
     public var dataFormatter: ((Data) -> String)?
     
-    public var decimalFormatter: ((Decimal) -> String)?
+    public var decimalFormatter: ((Decimal) -> String) = { String(describing: $0) }
     
     public var urlFormatter: ((URL) -> String)?
     
@@ -100,7 +100,7 @@ public struct WritingOptions {
             delimiter: delimiter
         )
         self.dataFormatter = dataFormatter
-        self.decimalFormatter = decimalFormatter
+        if let decimalFormatter { self.decimalFormatter = decimalFormatter }
         self.urlFormatter = urlFormatter
     }
 
@@ -115,13 +115,12 @@ public struct WritingOptions {
     func formatterForType<T>(_ type: T.Type) -> ((T) -> String)? {
         switch type {
         case is Data.Type:
-            guard let dataFormatter = dataFormatter else { return nil }
+            guard let dataFormatter else { return nil }
             return { dataFormatter($0 as! Data) }
         case is Decimal.Type:
-            guard let decimalFormatter = decimalFormatter else { return nil }
             return { decimalFormatter($0 as! Decimal) }
         case is URL.Type:
-            guard let urlFormatter = urlFormatter else { return nil }
+            guard let urlFormatter else { return nil }
             return { urlFormatter($0 as! URL) }
         default:
             return nil
