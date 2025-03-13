@@ -18,7 +18,7 @@ class DataValue {
 }
 
 enum FileOrData {
-    case file(String)
+    case file(URL)
     case data(DataValue)
     
     init(data: Data) {
@@ -96,11 +96,11 @@ public struct TabularDecoder {
     
     public func read<T: Decodable & Collection>(
         _ type: T.Type,
-        fromPath filePath: String,
+        from file: URL,
         hasHeaderRow: Bool = true,
         overrideHeader: [String]? = nil) throws -> (rows: T, header: [String]?)
     {
-        try read(type, fileOrData: FileOrData.file(filePath), hasHeaderRow: hasHeaderRow, overrideHeader: overrideHeader)
+        try read(type, fileOrData: FileOrData.file(file), hasHeaderRow: hasHeaderRow, overrideHeader: overrideHeader)
     }
     
     public func read<T: Decodable & Collection>(
@@ -123,8 +123,8 @@ public struct TabularDecoder {
 
         let dataFrame: DataFrame
         switch fileOrData {
-        case .file(let filePath):
-            dataFrame = try DataFrame(contentsOfCSVFile: URL(fileURLWithPath: filePath), types: columnInfo.types ?? [:], options: headerOptions.csvReadingOptions)
+        case .file(let file):
+            dataFrame = try DataFrame(contentsOfCSVFile: file, types: columnInfo.types ?? [:], options: headerOptions.csvReadingOptions)
         case .data(let dataValue):
             dataFrame = try DataFrame(csvData: dataValue.data, types: columnInfo.types ?? [:], options: headerOptions.csvReadingOptions)
         }
@@ -143,8 +143,8 @@ public struct TabularDecoder {
         let firstPart: (data: Data, lines: [String]) = try {
             let limit = hasHeaderRow ? 2 : 1
             switch fileOrData {
-            case .file(let filePath):
-                return try TabularDecoder.readLines(from: filePath, limit: limit)
+            case .file(let file):
+                return try TabularDecoder.readLines(from: file, limit: limit)
             case .data(let dataValue):
                 return try TabularDecoder.convertLines(from: dataValue.data, limit: limit)
             }
@@ -188,12 +188,12 @@ public struct TabularDecoder {
         case open
     }
 
-    private static func readLines(from filePath: String, limit: Int) throws -> (data: Data, lines: [String]) {
+    private static func readLines(from file: URL, limit: Int) throws -> (data: Data, lines: [String]) {
         var string = ""
         var lines = [String]()
         var count = 0
         
-        guard let file = fopen(filePath, "r") else {
+        guard let file = fopen(file.path, "r") else {
             throw FileError.open
         }
 

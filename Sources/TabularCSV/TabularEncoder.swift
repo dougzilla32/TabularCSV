@@ -23,11 +23,11 @@ public struct TabularEncoder {
     
     public func write<T: Encodable & Collection>(
         _ value: T,
-        toPath filePath: String,
+        to file: URL,
         includesHeader: Bool = true,
         overrideHeader: [String]? = nil) throws where T.Element: Encodable
     {
-        try write(value, fileOrData: .file(filePath), includesHeader: includesHeader, overrideHeader: overrideHeader)
+        try write(value, fileOrData: .file(file), includesHeader: includesHeader, overrideHeader: overrideHeader)
     }
     
     public func csvRepresentation<T: Encodable & Collection>(
@@ -53,8 +53,8 @@ public struct TabularEncoder {
         let columns = try dataFrameEncoder.encode(value, header: header).map { $0.eraseToAnyColumn() }
 
         switch fileOrData {
-        case .file(let filePath):
-            try DataFrame(columns: columns).writeCSV(to: URL(fileURLWithPath: filePath), options: headerOptions.csvWritingOptions)
+        case .file(let file):
+            try DataFrame(columns: columns).writeCSV(to: file, options: headerOptions.csvWritingOptions)
         case .data(let csvData):
             csvData.data = try DataFrame(columns: columns).csvRepresentation(options: headerOptions.csvWritingOptions)
         }
