@@ -45,7 +45,7 @@ public struct Nationality: CodableNilAsEmptyString {
 }
 
 @propertyWrapper
-public struct NationalityOptional: OptionalCodableNilAsEmptyString {
+public struct NationalityOpt: OptCodableNilAsEmptyString {
     public typealias CodableStringType = Nationality
     public var wrappedValue: String?
     public init(wrappedValue: String?) { self.wrappedValue = wrappedValue }
@@ -536,7 +536,7 @@ struct Content: Codable {
     try decodeEncode(Person.self, input: singleRowCSV, output: singleRowCSV)
 }
 
-@Test func testPartialRowMissingOptionalValues() async throws {
+@Test func testPartialRowMissingOptValues() async throws {
     let partialRowCSV = "name,age,height,tall,nationality\nAlice,30,,yes,US\n"
     try decodeEncode(
         PersonWithoutHeight.self,
@@ -885,8 +885,8 @@ let CatCSVScramble = CatCSVHeaderScramble + CatCSVRowsScramble
         let uIntValue: UInt?
         let uInt32Value: UInt32?
         let uInt64Value: UInt64?
-        @YesNoOptional var tall: Bool?
-        @NationalityOptional var nationality: String?
+        @YesNoOpt var tall: Bool?
+        @NationalityOpt var nationality: String?
     }
 
     let AllTypesHeader = """

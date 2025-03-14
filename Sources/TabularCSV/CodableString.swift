@@ -60,7 +60,7 @@ public extension CodableNilAsEmptyString {
     }
 }
 
-public protocol OptionalCodableString: Codable, OptionalCodingWrapper {
+public protocol OptCodableString: Codable, OptCodingWrapper {
     associatedtype CodableStringType: CodableString
     
     var wrappedValue: CodableStringType.ValueType? { get }
@@ -68,7 +68,7 @@ public protocol OptionalCodableString: Codable, OptionalCodingWrapper {
     init(wrappedValue: CodableStringType.ValueType?)
 }
 
-public extension OptionalCodableString {
+public extension OptCodableString {
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let string = try container.decode(String.self)
@@ -99,9 +99,9 @@ public extension OptionalCodableString {
     }
 }
 
-public protocol OptionalCodableNilAsEmptyString: OptionalCodableString { }
+public protocol OptCodableNilAsEmptyString: OptCodableString { }
 
-public extension OptionalCodableNilAsEmptyString {
+public extension OptCodableNilAsEmptyString {
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let string = container.decodeNil() ? "" : try container.decode(String.self)
@@ -136,14 +136,14 @@ public enum CodableStringError: Error {
     case invalidFormat(string: String)
 }
 
-//  MARK: OptionalCodingWrapper is from:
+//  MARK: OptCodingWrapper is from:
 //    https://github.com/GottaGetSwifty/CodableWrappers/blob/1b449bf3f19d3654571f00a7726786683dc950f0/Sources/CodableWrappers/OptionalWrappers.swift#L34
 //  It is referenced here:
 //    https://forums.swift.org/t/using-property-wrappers-with-codable/29804/12
 //
 
 /// Protocol for a PropertyWrapper to properly handle Coding when the wrappedValue is Optional
-public protocol OptionalCodingWrapper {
+public protocol OptCodingWrapper {
     associatedtype WrappedType: ExpressibleByNilLiteral
     var wrappedValue: WrappedType { get }
     init(wrappedValue: WrappedType)
@@ -151,14 +151,14 @@ public protocol OptionalCodingWrapper {
 
 public extension KeyedDecodingContainer {
     // This is used to override the default decoding behavior for OptionalCodingWrapper to allow a value to avoid a missing key Error
-    func decode<T>(_ type: T.Type, forKey key: KeyedDecodingContainer<K>.Key) throws -> T where T : Decodable, T: OptionalCodingWrapper {
+    func decode<T>(_ type: T.Type, forKey key: KeyedDecodingContainer<K>.Key) throws -> T where T : Decodable, T: OptCodingWrapper {
         return try decodeIfPresent(T.self, forKey: key) ?? T(wrappedValue: nil)
     }
 }
 
 public extension KeyedEncodingContainer {
     // Used to make make sure OptionalCodingWrappers encode no value when it's wrappedValue is nil.
-    mutating func encode<T>(_ value: T, forKey key: KeyedEncodingContainer<K>.Key) throws where T: Encodable, T: OptionalCodingWrapper {
+    mutating func encode<T>(_ value: T, forKey key: KeyedEncodingContainer<K>.Key) throws where T: Encodable, T: OptCodingWrapper {
         // Currently uses Mirror...this should really be avoided, but I'm not sure there's another way to do it cleanly.
 //        let mirror = Mirror(reflecting: value.wrappedValue)
 //        guard mirror.displayStyle != .optional || !mirror.children.isEmpty else {
@@ -198,7 +198,7 @@ public struct OneZero: CodableBool {
 }
 
 @propertyWrapper
-public struct OneZeroOptional: OptionalCodableString {
+public struct OneZeroOpt: OptCodableString {
     public typealias CodableStringType = OneZero
     public var wrappedValue: Bool?
     public init(wrappedValue: Bool?) { self.wrappedValue = wrappedValue }
@@ -213,7 +213,7 @@ public struct OnOff: CodableBool {
 }
 
 @propertyWrapper
-public struct OnOffOptional: OptionalCodableString {
+public struct OnOffOpt: OptCodableString {
     public typealias CodableStringType = OnOff
     public var wrappedValue: Bool?
     public init(wrappedValue: Bool?) { self.wrappedValue = wrappedValue }
@@ -228,7 +228,7 @@ public struct YesNo: CodableBool {
 }
 
 @propertyWrapper
-public struct YesNoOptional: OptionalCodableString {
+public struct YesNoOpt: OptCodableString {
     public typealias CodableStringType = YesNo
     public var wrappedValue: Bool?
     public init(wrappedValue: Bool?) { self.wrappedValue = wrappedValue }
@@ -246,7 +246,7 @@ public struct StringEnumCoder<T: RawRepresentable>: CodableString where T.RawVal
 }
 
 @propertyWrapper
-public struct StringEnumOptionalCoder<T: RawRepresentable>: OptionalCodableString where T.RawValue == String {
+public struct StringEnumOptCoder<T: RawRepresentable>: OptCodableString where T.RawValue == String {
     public typealias CodableStringType = StringEnumCoder<T>
     public var wrappedValue: T?
     public init(wrappedValue: T?) { self.wrappedValue = wrappedValue }

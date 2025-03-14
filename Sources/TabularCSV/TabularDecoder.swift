@@ -189,6 +189,145 @@ public struct TabularDecoder {
     }
 
     private static func readLines(from file: URL, limit: Int) throws -> (data: Data, lines: [String]) {
+        var completeText = ""
+        var linesArray = [String]()
+        var currentLine = ""
+        var lineCount = 0
+        var insideQuotedField = false
+        var previousWasBackslash = false
+        var pendingDoubleQuote = false  // Indicates a double quote at the end of a chunk
+
+        guard let filePointer = fopen(file.path, "rb") else {
+            throw FileError.open
+        }
+
+        let bufferSize = 4096
+        let buffer = UnsafeMutablePointer<CChar>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+
+        var reachedLimit = false
+
+        while !reachedLimit {
+            let bytesRead = fread(buffer, 1, bufferSize, filePointer)
+            if bytesRead <= 0 {
+                break
+            }
+            
+            var i = 0
+            while i < bytesRead {
+                let byte = buffer[i]
+                let scalar = UnicodeScalar(UInt8(byte))
+                let char = Character(scalar)
+                
+                // Process a deferred double quote from the previous chunk.
+                if pendingDoubleQuote {
+                    if char == "\"" {
+                        // Found a doubled quote: represents a literal quote.
+                        currentLine.append("\"")
+                        pendingDoubleQuote = false
+                        i += 1
+                        continue
+                    } else {
+                        // Not doubled; the pending quote toggles the quoted state.
+                        currentLine.append("\"")
+                        insideQuotedField.toggle()
+                        pendingDoubleQuote = false
+                        // Continue processing the current character.
+                    }
+                }
+                
+                // Process an escape from a previous backslash.
+                if previousWasBackslash {
+                    if char == "\"" {
+                        // Escaped double quote.
+                        currentLine.append("\"")
+                    } else {
+                        // Not a special escape sequence.
+                        currentLine.append("\\")
+                        currentLine.append(char)
+                    }
+                    previousWasBackslash = false
+                    i += 1
+                    continue
+                }
+                
+                if char == "\\" {
+                    // Mark that we saw a backslash.
+                    previousWasBackslash = true
+                    i += 1
+                    continue
+                }
+                
+                if char == "\"" {
+                    // Check for doubled quotes if available.
+                    if i < bytesRead - 1 {
+                        let nextByte = buffer[i + 1]
+                        let nextScalar = UnicodeScalar(UInt8(nextByte))
+                        let nextChar = Character(nextScalar)
+                        if nextChar == "\"" {
+                            // Consecutive quotes represent a literal quote.
+                            currentLine.append("\"")
+                            i += 2
+                            continue
+                        }
+
+                        // Not a doubled quote: toggle the quoted state.
+                        insideQuotedField.toggle()
+                        currentLine.append("\"")
+                        i += 1
+                        continue
+                    } else {
+                        // At the end of the buffer, defer the decision.
+                        pendingDoubleQuote = true
+                        i += 1
+                        continue
+                    }
+                }
+                
+                // Handle newline: only complete the record if not inside quotes.
+                if char == "\n" {
+                    if !insideQuotedField {
+                        linesArray.append(currentLine)
+                        completeText.append(currentLine)
+                        completeText.append("\n")
+                        lineCount += 1
+                        if lineCount == limit {
+                            reachedLimit = true
+                            break
+                        }
+                        currentLine = ""
+                    } else {
+                        // Newline inside quoted text is preserved.
+                        currentLine.append("\n")
+                    }
+                    i += 1
+                    continue
+                }
+                
+                // Append all other characters.
+                currentLine.append(char)
+                i += 1
+            }
+        }
+        
+        // If a pending double quote remains, process it.
+        if pendingDoubleQuote {
+            currentLine.append("\"")
+            insideQuotedField.toggle()
+            pendingDoubleQuote = false
+        }
+        
+        // If there is remaining text that wasn't terminated by a newline, add it.
+        if !currentLine.isEmpty && lineCount < limit {
+            linesArray.append(currentLine)
+            completeText.append(currentLine)
+        }
+        
+        fclose(filePointer)
+        return (data: completeText.data(using: .utf8)!, lines: linesArray)
+    }
+    
+    private static func readLinesXX(from file: URL, limit: Int) throws -> (data: Data, lines: [String]) {
         var string = ""
         var lines = [String]()
         var count = 0
